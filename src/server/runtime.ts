@@ -76,7 +76,7 @@ function liveVaultAllowlist(): Array<{ id: string; address: HexAddress; label: s
   });
 }
 
-export function createLiveRuntime() {
+function createLiveRuntime(): { gateway: SigningGateway } {
   const deps: Dependencies = {
     store: new FileGatewayStore(
       process.env.GATEWAY_STORE_PATH ?? join(process.cwd(), ".data", "gateway.json"),
@@ -99,14 +99,19 @@ export function createLiveRuntime() {
     ),
     vaultAllowlist: liveVaultAllowlist(),
   };
-  return { gateway: new SigningGateway(deps), deps };
+  return { gateway: new SigningGateway(deps) };
 }
 
 declare global {
-  var unflatRuntime: { gateway: SigningGateway; deps: Dependencies } | undefined;
+  var unflatRuntime: { gateway: SigningGateway } | undefined;
 }
 
-export const runtime =
-  globalThis.unflatRuntime ??
-  (process.env.MOCK_MODE === "false" ? createLiveRuntime() : createMockRuntime());
+function createApplicationRuntime(): { gateway: SigningGateway } {
+  if (process.env.MOCK_MODE === "false") return createLiveRuntime();
+  const mock = createMockRuntime();
+  return { gateway: mock.gateway };
+}
+
+export const runtime: { gateway: SigningGateway } =
+  globalThis.unflatRuntime ?? createApplicationRuntime();
 if (process.env.NODE_ENV !== "production") globalThis.unflatRuntime = runtime;
