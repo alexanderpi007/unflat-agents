@@ -1,0 +1,103 @@
+import type { GatewayStore } from "./ports";
+import type { Agent, Mandate, StatementEvent, StoredIdempotency, Strategy } from "./types";
+import { IdempotencyError } from "./errors";
+
+export class MemoryGatewayStore implements GatewayStore {
+  private readonly agents = new Map<string, Agent>();
+  private readonly mandates = new Map<string, Mandate>();
+  private readonly events: StatementEvent[] = [];
+  private readonly idempotency = new Map<string, StoredIdempotency>();
+  private readonly strategies = new Map<string, Strategy>();
+  private tail: Promise<void> = Promise.resolve();
+
+  private async locked<T>(work: () => T | Promise<T>): Promise<T> {
+    const previous = this.tail;
+    let release = () => {};
+    this.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+    }
+  }
+
+  async putAgent(agent: Agent): Promise<void> {
+    await this.locked(() => this.agents.set(agent.id, structuredClone(agent)));
+  }
+
+  async getAgent(agentId: string): Promise<Agent | undefined> {
+    const agent = this.agents.get(agentId);
+    return agent ? structuredClone(agent) : undefined;
+  }
+
+  async putMandate(mandate: Mandate): Promise<void> {
+    await this.locked(() => this.mandates.set(mandate.agentId, structuredClone(mandate)));
+  }
+
+  async getMandate(agentId: string): Promise<Mandate | undefined> {
+    const mandate = this.mandates.get(agentId);
+    return mandate ? structuredClone(mandate) : undefined;
+  }
+
+  async updateMandate(agentId: string, update: (mandate: Mandate) => Mandate): Promise<Mandate | undefined> {
+    return this.locked(() => {
+      const current = this.mandates.get(agentId);
+      if (!current) return undefined;
+      const next = update(structuredClone(current));
+      this.mandates.set(agentId, structuredClone(next));
+      return structuredClone(next);
+    });
+  }
+
+  async appendEvent(event: StatementEvent): Promise<void> {
+    await this.locked(() => this.events.push(structuredClone(event)));
+  }
+
+  async listEvents(agentId: string): Promise<StatementEvent[]> {
+    return this.events.filter((event) => event.agentId === agentId).map((event) => structuredClone(event));
+  }
+
+  async putStrategy(agentId: string, strategy: Strategy): Promise<void> {
+    await this.locked(() => this.strategies.set(`${agentId}:${strategy.id}`, structuredClone(strategy)));
+  }
+
+  async getStrategy(agentId: string, strategyId: string): Promise<Strategy | undefined> {
+    const strategy = this.strategies.get(`${agentId}:${strategyId}`);
+    return strategy ? structuredClone(strategy) : undefined;
+  }
+
+  async claimIdempotency(
+    compoundKey: string,
+    fingerprint: string,
+  ): Promise<{ record: StoredIdempotency; fresh: boolean }> {
+    return this.locked(() => {
+      const existing = this.idempotency.get(compoundKey);
+      if (existing) {
+        if (existing.fingerprint !== fingerprint) {
+          throw new IdempotencyError("Idempotency key was already used for a different request.");
+        }
+        return { record: structuredClone(existing), fresh: false };
+      }
+      const claimed: StoredIdempotency = { compoundKey, fingerprint, state: "started" };
+      this.idempotency.set(compoundKey, claimed);
+      return { record: structuredClone(claimed), fresh: true };
+    });
+  }
+
+  async finishIdempotency(compoundKey: string, result: unknown): Promise<void> {
+    await this.locked(() => {
+      const record = this.idempotency.get(compoundKey);
+      if (record) this.idempotency.set(compoundKey, { ...record, state: "succeeded", result });
+    });
+  }
+
+  async failIdempotency(compoundKey: string, error: string): Promise<void> {
+    await this.locked(() => {
+      const record = this.idempotency.get(compoundKey);
+      if (record) this.idempotency.set(compoundKey, { ...record, state: "failed", error });
+    });
+  }
+}
