@@ -301,8 +301,8 @@ export function createDemoRuntime(seededWallet?: { walletId: string; address: He
 }
 
 declare global {
-  var unflatRuntime: GatewayRuntime | undefined;
+  var unflatOwnerEmailRuntime: GatewayRuntime | undefined;
 }
 
-export const runtime: GatewayRuntime = globalThis.unflatRuntime?.deps ? globalThis.unflatRuntime : createApplicationRuntime();
-if (process.env.NODE_ENV !== "production") globalThis.unflatRuntime = runtime;
+export const runtime: GatewayRuntime = globalThis.unflatOwnerEmailRuntime?.deps ? globalThis.unflatOwnerEmailRuntime : createApplicationRuntime();
+if (process.env.NODE_ENV !== "production") globalThis.unflatOwnerEmailRuntime = runtime;

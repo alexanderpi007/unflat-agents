@@ -16,14 +16,12 @@ function request(token?: string, host = "demo-example.ngrok-free.app", origin = 
     host, origin, ...(token ? { Authorization: `Bearer ${token}` } : {}), "content-type": "application/json",
   }, body: JSON.stringify({ mode: "live", confirmation: "CONFIRM", runId: "a7100000-0000-4000-8000-000000000003" }) });
 }
-beforeEach(() => { vi.stubEnv("VERCEL", ""); vi.stubEnv("OWNER_TOKEN", owner); vi.stubEnv("MCP_AGENT_TOKEN", agent); });
+beforeEach(() => { vi.stubEnv("VERCEL", ""); vi.stubEnv("OWNER_TOKEN", owner); });
 afterEach(() => vi.unstubAllEnvs());
 
 it("remote owner is accepted, with strict separation from the agent role", () => {
   expect(requireRole(request(owner), "owner")).toMatch(/^[a-f0-9]{64}$/);
-  expect(requireRole(request(agent), "agent")).toMatch(/^[a-f0-9]{64}$/);
   expect(() => requireRole(request(agent), "owner")).toThrow();
-  expect(() => requireRole(request(owner), "agent")).toThrow();
   expect(() => requireRole(request(), "owner")).toThrow();
   expect(() => requireRole(request(owner, "demo-example.ngrok-free.app", "https://evil.example"), "owner")).toThrow();
   const req = request(owner);
@@ -32,10 +30,10 @@ it("remote owner is accepted, with strict separation from the agent role", () =>
   expect(() => requireOwnerMutation(req)).not.toThrow();
 });
 
-it("missing, weak or shared credentials fail closed", () => {
-  for (const value of ["", "short", agent]) {
+it("missing or weak owner credentials fail closed", () => {
+  for (const value of ["", "short"]) {
     vi.stubEnv("OWNER_TOKEN", value);
-    expect(() => requireRole(request(agent), "agent")).toThrow();
+    expect(() => requireRole(request(owner), "owner")).toThrow();
   }
 });
 

@@ -47,7 +47,7 @@ function OwnerControls() {
     finally { setConfirmation(""); setBusy(false); lock.current = false; }
   }
   return <main style={{ maxWidth: 720, margin: "64px auto", padding: 24 }}>
-    <h1>Your wallet. Your control.</h1><p>Sign in with the email used to open the account. This screen uses your Privy identity directly, not the gateway signer or OWNER_TOKEN.</p>
+    <h1>Your wallet. Your control.</h1><p>Sign in with the email used to open the account. This screen uses your Privy identity directly, not the gateway signer.</p>
     {!authenticated ? <button disabled={!ready} onClick={() => login()}>Log in with Privy</button> : <>
       <p>Signed in: {user?.email?.address}</p><button disabled={busy} onClick={() => { setAddress(""); setConfirmation(""); void logout(); }}>Log out</button>
       <label htmlFor="owned-wallet">Choose your wallet</label><select id="owned-wallet" disabled={busy} value={address} onChange={e => { setAddress(e.target.value); setConfirmation(""); }}>

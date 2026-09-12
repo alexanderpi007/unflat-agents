@@ -11,6 +11,7 @@ import type {
   Strategy,
 } from "./types";
 import { IdempotencyError } from "./errors";
+import { checkEnrollmentLimit } from "./enrollment-limit";
 
 export class MemoryGatewayStore implements GatewayStore {
   private ownerId?: string;
@@ -20,6 +21,7 @@ export class MemoryGatewayStore implements GatewayStore {
     return this.locked(() => {
       if (account.name === "atlas" || [...this.accounts.values()].some(a => a.name === account.name)
         || [...this.agents.values()].some(a => a.ensName.toLowerCase() === `${account.name}.agents.unflat.eth`)) return false;
+      checkEnrollmentLimit([...this.accounts.values()], account);
       this.accounts.set(account.id, structuredClone(account)); return true;
     });
   }

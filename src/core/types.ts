@@ -8,6 +8,7 @@ export interface AgentAccount {
   name: string;
   ownerId: string;
   ownerEmail?: string;
+  enrollmentIpHash?: string;
   tokenHash: string;
   status: "provisioning" | "ready" | "failed";
   createdAt: string;

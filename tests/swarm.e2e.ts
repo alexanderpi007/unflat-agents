@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
+import { ownerFixture } from "./owner-ui-fixture";
 import { proxyFixture } from "./swarm-proxy-fixture";
 import { runDemo } from "../src/demo/run";
 import realRun from "../public/real-run.json" with { type: "json" };
@@ -30,7 +31,7 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   expect(posts).toBe(1);
 });
 
-test("owner token unlocks exact LIVE plan but cannot run without typed confirmation", async ({ page }) => {
+test("remote Owner mode opens email login without exposing operator controls", async ({ page }) => {
   // Tunnel equivalent: browser sees HTTPS/non-loopback; preserve its Host at the local gateway.
   await page.route("https://owner-demo.example/**", async route => {
     const url = new URL(route.request().url());
@@ -45,25 +46,10 @@ test("owner token unlocks exact LIVE plan but cannot run without typed confirmat
   await expect(live).toHaveCount(0);
   await page.getByRole("button", { name: "Owner mode", exact: true }).click();
   await expect(live).toHaveCount(0);
-  await page.getByLabel("Owner token", { exact: true }).fill("test-agent-token-not-a-secret-123456789");
-  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
-  await expect(page.locator("#owner-access").getByRole("alert")).toContainText("Use OWNER_TOKEN");
-  await expect(live).toHaveCount(0);
-  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
-  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
-  await expect(live).toBeVisible();
-  await expect(live).toBeDisabled();
-  await page.reload();
-  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
-  await expect(live).toBeVisible();
-  await expect(live).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Log in with email", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Owner token", { exact: true })).toHaveCount(0);
   expect(page.url()).not.toContain("token");
-  await expect(page.getByText(/Total 1.05 USDC plus gas/)).toBeVisible();
-  await page.locator("#live-confirm").fill("confirm");
-  await expect(live).toBeDisabled();
-  await page.getByRole("button", { name: "Sign out owner" }).click();
   await expect(live).toHaveCount(0);
-  // Never click LIVE in browser tests. Real chain writes belong to the separate Arkiv test only.
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
@@ -72,17 +58,14 @@ test("owner approvals require a separate typed confirmation for each request", a
   const pending = [{ id, agentId: "test-agent", purpose: "Pay five cents and save one dollar." }];
   const actions: unknown[] = [];
   await page.route("**/api/owner/approvals", async route => {
-    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    expect(route.request().headers().authorization).toBe("Bearer test.privy.jwt");
     if (route.request().method() === "POST") {
       actions.push(route.request().postDataJSON()); pending.length = 0;
       return route.fulfill({ json: { status: "approved" } });
     }
     return route.fulfill({ json: { pending, moneyMode: "mock", recipient: "test-recipient", vault: "test-vault" } });
   });
-  await page.goto("http://localhost:3107");
-  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
-  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
-  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  await ownerFixture(page);
   const approve = page.getByRole("button", { name: "Approve (2 minutes, $1.20 cap)", exact: true });
   await expect(approve).toBeDisabled();
   await page.getByLabel("Type CONFIRM to approve this budget").fill("confirm");
@@ -91,7 +74,37 @@ test("owner approvals require a separate typed confirmation for each request", a
   await approve.click();
   await expect(page.getByText("Approved. The agent has two minutes to act.")).toBeVisible();
   expect(actions).toEqual([{ id, action: "approve", confirmation: "CONFIRM" }]);
-  await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toHaveCount(0);
+});
+
+test("approval deep link shows one request and persists approved state after reload", async ({ page }) => {
+  const id = "a7100000-0000-4000-8000-000000000066";
+  let status = "pending";
+  await page.route("**/api/owner/approvals*", async route => {
+    expect(route.request().headers().authorization).toBe("Bearer test.privy.jwt");
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ id, action: "approve", confirmation: "CONFIRM" });
+      status = "approved";
+      return route.fulfill({ json: { status } });
+    }
+    expect(new URL(route.request().url()).searchParams.get("request")).toBe(id);
+    return route.fulfill({ json: { request: { id, status }, moneyMode: "mock", pending: status === "pending" ? [
+      { id, agentId: "selected", purpose: "Only this request" },
+      { id: "other", agentId: "other", purpose: "Must not appear" },
+    ] : [] } });
+  });
+  await ownerFixture(page, id);
+  await expect(page.getByText("Only this request", { exact: true })).toBeVisible();
+  await expect(page.getByText("Must not appear", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Owner accounts" })).toHaveCount(0);
+  const approve = page.getByRole("button", { name: "Approve (2 minutes, $1.20 cap)", exact: true });
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("Type CONFIRM to approve this budget").fill("CONFIRM");
+  await approve.click();
+  await expect(page.getByText("Approved — your agent can act for 2 minutes", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Approved — your agent can act for 2 minutes", { exact: true })).toBeVisible();
+  await expect(approve).toHaveCount(0);
 });
 
 test("owner lists separate funding addresses and confirms only the selected account", async ({ page }) => {
@@ -104,17 +117,14 @@ test("owner lists separate funding addresses and confirms only the selected acco
   const actions: unknown[] = [];
   await page.route("**/api/owner/approvals", route => route.fulfill({ json: { pending: [], moneyMode: "mock" } }));
   await page.route("**/api/owner/accounts", async route => {
-    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    expect(route.request().headers().authorization).toBe("Bearer test.privy.jwt");
     if (route.request().method() === "POST") {
       actions.push(route.request().postDataJSON());
       return route.fulfill({ json: { status: "approved" } });
     }
     return route.fulfill({ json: { accounts, moneyMode: "mock", recipient: "recipient", vault: "vault" } });
   });
-  await page.goto("http://localhost:3107");
-  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
-  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
-  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  await ownerFixture(page);
   const section = page.getByRole("region", { name: "Owner accounts" });
   await expect(section).toContainText(accounts[0].fundingAddress);
   await expect(section).toContainText(accounts[1].fundingAddress);
@@ -142,14 +152,11 @@ test("owner-owned recovery is per account, clearly labelled and separately CONFI
     fundingAddress: `0x${"3".repeat(40)}`, balance: null, status: "ready", mandate: { allowed: false, reason: "Expired" }, ensExplorerUrl: "https://explorer.ens.dev",
   }] } }));
   await page.route("**/api/owner/recovery", async route => {
-    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    expect(route.request().headers().authorization).toBe("Bearer test.privy.jwt");
     actions.push(route.request().postDataJSON());
     return route.fulfill({ json: { transactionHash: `0x${"6".repeat(64)}`, sharesRedeemedRaw: "123", assetsReceivedRaw: "1000000" } });
   });
-  await page.goto("http://localhost:3107");
-  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
-  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
-  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  await ownerFixture(page);
   const section = page.getByRole("region", { name: "Owner accounts" });
   await expect(section).toContainText("Owner-owned · owner@example.com");
   await expect(section.getByRole("link", { name: "Log in on Privy to withdraw or revoke ↗" })).toHaveAttribute("href", "/owner-wallet");

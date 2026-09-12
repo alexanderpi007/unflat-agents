@@ -4,9 +4,10 @@ import { requireDemoAdapters } from "@/demo/dashboard-run";
 import { accountName, enroll } from "./enrollment";
 
 export class AgentService {
-  constructor(private readonly runtime: GatewayRuntime, private readonly accountId?: string) {}
+  constructor(private readonly runtime: GatewayRuntime, private readonly accountId?: string, private readonly enrollmentIpHash?: string, private readonly gatewayOrigin = "http://localhost:3000") {}
+  private approvalUrl(id: string) { return new URL(`/owner?request=${encodeURIComponent(id)}`, this.gatewayOrigin).toString(); }
   get agentId() {
-    if (!this.accountId) throw new Error("REFUSED — enrollment token cannot access accounts. Call get_account({name}) once, then reconnect with the returned account token.");
+    if (!this.accountId) throw new Error("REFUSED — use your account_token. Open an account with get_account({name, owner_email}) first, then send Authorization: Bearer <account_token> on every later call.");
     return this.accountId;
   }
   private async account() {
@@ -15,7 +16,7 @@ export class AgentService {
     return this.runtime.gateway.state(this.agentId);
   }
   async getAccount(name?: string, ownerEmail?: string) {
-    if (!this.accountId) return enroll(this.runtime, name, ownerEmail);
+    if (!this.accountId) return enroll(this.runtime, name, ownerEmail, this.enrollmentIpHash);
     const account = await this.runtime.deps.store.getAccount(this.agentId);
     if (!account || (name !== undefined && accountName.parse(name) !== account.name)) throw new Error("REFUSED — account token cannot access or create a different name.");
     if (ownerEmail !== undefined && ownerEmail.trim().toLowerCase() !== account.ownerEmail) throw new Error("REFUSED — account token cannot change the owner identity.");
@@ -34,10 +35,13 @@ export class AgentService {
   async requestMandate(purpose: string) {
     await this.account();
     const decision = await this.runtime.gateway.checkMandate(this.agentId);
-    if (decision.allowed) return { status: "active", decision };
+    if (decision.allowed) {
+      const active = (await this.runtime.deps.store.listApprovals()).findLast(r => r.agentId === this.agentId && r.status === "approved");
+      return { status: "active", decision, approval_url: active ? this.approvalUrl(active.id) : this.gatewayOrigin };
+    }
     const request = await this.runtime.deps.store.requestApproval({ id: randomUUID(), agentId: this.agentId,
       principal: (await this.runtime.deps.store.getAccount(this.agentId))!.tokenHash, purpose, createdAt: this.runtime.deps.clock.now().toISOString(), status: "pending" });
-    return { requestId: request.id, status: request.status, reason: "Waiting for the owner to approve and type CONFIRM. No permission granted." };
+    return { requestId: request.id, status: request.status, approval_url: this.approvalUrl(request.id), reason: "Waiting for the owner to approve and type CONFIRM. No permission granted." };
   }
   private async requireApproval() {
     if (this.runtime.health.adapters.privy.mode === "live") requireDemoAdapters(this.runtime, "live");
@@ -65,9 +69,11 @@ export class AgentService {
   }
   async statement() {
     const state = await this.account();
-    return { name: state.agent.ensName, mandate: await this.runtime.gateway.checkMandate(this.agentId),
+    return { name: state.agent.ensName, moneyMode: this.runtime.health.adapters.privy.mode, mandate: await this.runtime.gateway.checkMandate(this.agentId),
       events: state.events.filter(e => !state.mandate || e.at >= state.mandate.createdAt).map(e => ({
         action: e.action, status: e.status, amountUsdcCents: e.amountUsdcCents, at: e.at, reason: e.reason, reference: e.reference,
+        proof_url: /^https:\/\/(basescan\.org\/tx|sepolia\.etherscan\.io\/tx|tiramisu\.explorer\.arkiv\.network\/entity)\/0x[0-9a-f]{64}$/i.test(e.reference ?? "") ? e.reference
+          : this.runtime.health.adapters.privy.mode === "live" && ["usdc.transfer", "earn.approve", "earn.sweep", "owner.transfer", "earn.recall"].includes(e.action) && /^0x[0-9a-f]{64}$/i.test(e.reference ?? "") ? `https://basescan.org/tx/${e.reference}` : undefined,
       })) };
   }
 }

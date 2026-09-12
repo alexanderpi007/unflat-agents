@@ -9,6 +9,9 @@ import { POST, GET } from "@/app/api/mcp/route";
 import { POST as approve, GET as approvals } from "@/app/api/owner/approvals/route";
 import { GET as accounts, POST as grant } from "@/app/api/owner/accounts/route";
 import { POST as recover } from "@/app/api/owner/recovery/route";
+import { verifyPrivyOwner } from "@/server/privy-owner";
+
+vi.mock("@/server/privy-owner", () => ({ verifyPrivyOwner: vi.fn() }));
 
 vi.mock("@/server/runtime", async importOriginal => {
   const actual = await importOriginal<typeof import("@/server/runtime")>();
@@ -24,14 +27,14 @@ const request = (path: string, token: string, body?: unknown) => new Request(bas
   body: body ? JSON.stringify(body) : undefined,
 });
 beforeEach(() => {
-  vi.stubEnv("VERCEL", ""); vi.stubEnv("OWNER_TOKEN", owner); vi.stubEnv("MCP_AGENT_TOKEN", agent);
+  vi.stubEnv("VERCEL", ""); vi.stubEnv("OWNER_TOKEN", owner);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
-async function connect(token: string) {
+async function connect(token?: string, query = false) {
   const client = new Client({ name: "fake-agent", version: "1.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(base + "/api/mcp"), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  await client.connect(new StreamableHTTPClientTransport(new URL(base + "/api/mcp" + (query && token ? `?token=${encodeURIComponent(token)}` : "")), {
+    requestInit: { headers: { ...(token && !query ? { Authorization: `Bearer ${token}` } : {}) } },
     fetch: async (url, init) => { const req = new Request(url, init); return req.method === "POST" ? POST(req) : GET(req); },
   }));
   return client;
@@ -40,10 +43,55 @@ function body(result: Awaited<ReturnType<Client["callTool"]>>) {
   return JSON.parse((result.content as { text: string }[])[0].text);
 }
 
+it("Privy owners see and approve only their own account; operator override stays API-only", async () => {
+  const enrollment = await connect();
+  const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "email-owner", owner_email: "giacomo@example.com" } }));
+  const scoped = await connect(created.account_token, true);
+  try {
+    expect(body(await scoped.callTool({ name: "get_account", arguments: {} })).accountToken).toBeUndefined();
+    const pending = body(await scoped.callTool({ name: "request_mandate", arguments: { purpose: "Email owner approval" } }));
+    const id = new URL(pending.approval_url).searchParams.get("request")!;
+    const wallet = await runtime.deps.store.getAgent(created.accountId);
+    const identity = wallet!.ownership!;
+    if (identity.kind !== "privy-user") throw new Error("Owner-owned fixture required");
+    const jwt = "test.privy.jwt";
+    const verify = vi.mocked(verifyPrivyOwner);
+    for (const principal of [
+      { userId: identity.privyUserId, emails: ["wrong@example.com"] },
+      { userId: "did:privy:impostor", emails: ["giacomo@example.com"] },
+    ]) {
+      verify.mockResolvedValue(principal);
+      expect((await (await accounts(request("/api/owner/accounts", jwt))).json()).accounts).toEqual([]);
+      expect((await (await approvals(request(`/api/owner/approvals?request=${id}`, jwt))).json()).request).toBeNull();
+      expect((await approve(request("/api/owner/approvals", jwt, { id, action: "approve", confirmation: "CONFIRM" }))).status).toBe(403);
+      expect((await approve(request("/api/owner/approvals", jwt, { id, action: "deny" }))).status).toBe(403);
+      expect((await grant(request("/api/owner/accounts", jwt, { accountId: created.accountId, confirmation: "CONFIRM", requestId: id }))).status).toBe(403);
+      expect((await recover(request("/api/owner/recovery", jwt, { accountId: created.accountId, action: "owner.transfer", confirmation: "CONFIRM", requestId: id, amountUsdcCents: 100, recipient: `0x${"9".repeat(40)}` }))).status).toBe(403);
+    }
+    verify.mockResolvedValue({ userId: identity.privyUserId, emails: ["giacomo@example.com"] });
+    const listed = await (await accounts(request("/api/owner/accounts", jwt))).json();
+    expect(listed.accounts.map((a: { id: string }) => a.id)).toEqual([created.accountId]);
+    expect((await (await approvals(request(`/api/owner/approvals?request=${id}`, jwt))).json()).pending).toHaveLength(1);
+    expect((await approve(request("/api/owner/approvals", jwt, { id, action: "approve" }))).status).toBe(400);
+    expect((await approve(request("/api/owner/approvals", jwt, { id, action: "approve", confirmation: "CONFIRM" }))).status).toBe(200);
+    expect((await (await approvals(request(`/api/owner/approvals?request=${id}`, jwt))).json()).request.status).toBe("approved");
+    expect(body(await scoped.callTool({ name: "get_account", arguments: {} })).mandate.allowed).toBe(true);
+    verify.mockRejectedValue(new Error("Invalid signature"));
+    expect((await accounts(request("/api/owner/accounts", jwt))).status).toBe(403);
+    expect((await accounts(request("/api/owner/accounts", owner))).status).toBe(200);
+    vi.stubEnv("VERCEL", "1");
+    expect((await accounts(request("/api/owner/accounts", owner))).status).toBe(403);
+    expect((await accounts(request("/api/owner/accounts", jwt))).status).toBe(403);
+  } finally { await enrollment.close(); await scoped.close(); }
+});
+
 it("fake HTTP client: request → remote owner CONFIRM → pay → save → expiry → refusal", async () => {
   await runtime.gateway.getOrCreateAgent(persistentAgentId, "Atlas");
   const atlas = await runtime.deps.store.getAgent(persistentAgentId);
-  const enrollment = await connect(agent);
+  const enrollment = await connect();
+  expect(enrollment.getInstructions()).toContain("account_token");
+  const discovered = (await enrollment.listTools()).tools;
+  expect(discovered.find(t => t.name === "request_mandate")?.description).toContain("approval_url");
   expect((await enrollment.callTool({ name: "statement", arguments: {} })).isError).toBe(true);
   const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "Nova", owner_email: "owner@example.com" } }));
   expect(created).toMatchObject({ name: "nova.agents.unflat.eth", status: "ready" });
@@ -64,7 +112,9 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
     expect((await tool("get_account", { name: "atlas" })).isError).toBe(true);
     expect((await tool("statement")).isError).not.toBe(true);
     expect((await tool("grant_mandate")).isError).toBe(true);
-    expect((await tool("request_mandate", { purpose: "Send five cents, save one dollar." })).isError).not.toBe(true);
+    const requested = body(await tool("request_mandate", { purpose: "Send five cents, save one dollar." }));
+    expect(requested.approval_url).toMatch(/^https:\/\/demo-example.ngrok-free.app\/owner\?request=/);
+    expect(requested.next_step).toContain(requested.approval_url);
     const pending = (await (await approvals(request("/api/owner/approvals", owner))).json()).pending;
     expect(pending).toHaveLength(1);
     expect(JSON.stringify(pending)).not.toContain("principal");
@@ -74,7 +124,7 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
     expect((await approve(request("/api/owner/approvals", owner, { id, action: "approve" }))).status).toBe(400);
     expect((await approve(request("/api/owner/approvals", owner, { id, action: "approve", confirmation: "CONFIRM" }))).status).toBe(200);
     expect((await approve(request("/api/owner/approvals", owner, { id, action: "approve", confirmation: "CONFIRM" }))).status).toBe(400);
-    expect((await tool("pay", { amountUsdcCents: 5, idempotencyKey: "approved-pay" })).isError).not.toBe(true);
+    expect((await tool("pay", { amountUsdcCents: 5, idempotency_key: "approved-pay" })).isError).not.toBe(true);
     expect((await tool("pay", { amountUsdcCents: 100, idempotencyKey: "arbitrary-pay" })).isError).toBe(true);
     expect((await tool("save", { amountUsdcCents: 100, idempotencyKey: "approved-save" })).isError).not.toBe(true);
     const mandate = await runtime.deps.store.getMandate(pending[0].agentId);
@@ -85,7 +135,8 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
     const advice = vi.spyOn(runtime.deps.aiMorgan, "strategize");
     for (const name of ["pay", "save", "strategize"]) {
       const result = await tool(name, { ...(name === "strategize" ? {} : { amountUsdcCents: name === "pay" ? 5 : 100 }), idempotencyKey: `expired-${name}` });
-      expect(result.isError).toBe(true);
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({ status: "REFUSED", expected: true });
       expect(JSON.stringify(result)).toContain("REFUSED");
     }
     for (const spy of [...signing, advice]) expect(spy).not.toHaveBeenCalled();
@@ -101,7 +152,7 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
 });
 
 it("two scoped clients cannot read, spend, save or grant for each other; owner sees both balances", async () => {
-  const enrollment = await connect(agent);
+  const enrollment = await connect();
   const first = body(await enrollment.callTool({ name: "get_account", arguments: { name: "comet", owner_email: "owner@example.com" } }));
   const second = body(await enrollment.callTool({ name: "get_account", arguments: { name: "luna", owner_email: "owner@example.com" } }));
   const one = await connect(first.accountToken), two = await connect(second.accountToken);
@@ -158,7 +209,7 @@ it("denial cannot be turned into approval by a replay", async () => {
 });
 
 it("owner-only recall and transfer require CONFIRM, fresh mandate and price validation; agents cannot invoke them", async () => {
-  const enrollment = await connect(agent);
+  const enrollment = await connect();
   const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "owner-recovery", owner_email: "owner@example.com" } }));
   const client = await connect(created.accountToken);
   const input = { accountId: created.accountId, action: "earn.recall", confirmation: "CONFIRM",

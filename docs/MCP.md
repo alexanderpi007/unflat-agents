@@ -1,66 +1,43 @@
-# unflat agent tools
+# unflat MCP protocol
+Endpoint: https://circus-thicken-plod.ngrok-free.dev/api/mcp (temporary local gateway tunnel, not Vercel).
 
-Local gateway, optionally through HTTPS ngrok: `POST /api/mcp`, **Streamable HTTP**. Use `Authorization: Bearer <MCP_AGENT_TOKEN>` only to enroll with `get_account({name, owner_email})`; reconnect with `Authorization: Bearer <accountToken>` for every later call. No public Vercel endpoint. Stdio `npm run mcp` bridges to the same authenticated HTTP server. [Connection and owner approval instructions](QUICKSTART-AGENT.md).
+Initialize and tools/list are anonymous. Initialization supplies five lines of instructions; tool descriptions carry the workflow. No enrollment/shared agent token exists. Ask the human for their actual owner email before opening a wallet—never invent one.
 
-Exactly six tools are exposed. All inputs reject additional fields. No caller-supplied wallet/agent ID. `grant_mandate` is owner-only REST, never an MCP tool. Read/request operations need an agent token, but no active mandate. Pay/advice/save additionally require an owner-approved request bound to the current mandate and the gateway’s fresh authorization checks.
+## Six tools
 
-Examples below are illustrative shapes, not transaction proofs. Each MCP response contains a `content` text block with JSON; tool failures set `isError: true` and include a readable reason. Financial amounts are integer USDC cents.
-
-| Tool | Example input | Output / permission |
+| Tool | Input | Result / next step |
 | --- | --- | --- |
-| `get_account` | `{"name":"nova","owner_email":"owner@example.com"}` to enroll; `{}` with account token | Enrollment pregenerates a wallet owned by the Privy email user, creates its ENS name and returns a token once. Scoped reads return ownership, name, wallet/funding address, USDC balance (null if unavailable), fresh mandate decision, request status and money mode without an active mandate. |
-| `request_mandate` | `{"purpose":"Send five cents and save one dollar."}` | `{"requestId":"<uuid>","status":"pending","reason":"Waiting for the owner…"}`. No authorization granted. Existing pending request is reused. |
-| `pay` | `{"amountUsdcCents":5,"idempotencyKey":"take-001-pay"}` | Transaction hash / BaseScan link from `transferUsdc`. Recipient is configured by owner; amount fixed at 5 cents. |
-| `strategize` | `{"idempotencyKey":"take-001-advice"}` | Server-stored strategy ID, recommendations and price-validation result. Dry call before fee-waived call; active mandate required. |
-| `save` | `{"amountUsdcCents":100,"idempotencyKey":"take-001-save"}` | Deposit hash / BaseScan link and receipt-backed shares. Runs strategy first, then gateway sweep. Amount fixed at 100 cents, owner-allowlisted vault only. |
-| `statement` | `{}` | Name, fresh mandate decision and this account’s current-run event list; available after expiry. No commitment opening, owner token or Swarm reference. |
+| get_account | {"name":"nova","owner_email":"owner@example.com"} without auth; {} with account token | One-time account_token, funding_address, ownership and money_mode. Give only the funding address to the owner; do not fund mock addresses. |
+| request_mandate | {"purpose":"Pay five cents and save one dollar"} | Pending request and approval_url. Show that link to the owner; poll get_account every five seconds until mandate.allowed=true. |
+| pay | {"amountUsdcCents":5,"idempotency_key":"unique-pay-001"} | Guarded 0.05 USDC transfer and proof; save next. |
+| strategize | {"idempotency_key":"unique-advice-001"} | Dry then fee-waived advice under mandate; never a client-selected deposit vault. |
+| save | {"amountUsdcCents":100,"idempotency_key":"unique-save-001"} | Guarded exact approval/deposit and receipt-backed shares; wait for expiry. |
+| statement | {} | This account's current run, readable decisions, proof_url, fresh mandate and budget_left. Available after expiry. |
 
-`get_account({name, owner_email})` enrollment example (placeholders, never publish an actual account token):
+Every tool result has structuredContent and matching JSON text, including next_step. Discovery publishes outputSchema. An expired Arkiv mandate returns status=REFUSED, expected=true, retryable=false, budget_left and the gateway reason, with isError=false: this is the successful refusal scene. Other failures remain isError=true and give a next_step. Schema errors never echo supplied credential values.
 
-```json
-{"accountId":"<uuid>","name":"nova.agents.unflat.eth","ownerId":"owner:<public-uuid>","ownerEmail":"owner@example.com","ownership":"privy-user","status":"ready","accountToken":"<one-time-secret>","fundingAddress":"0x…","network":"eip155:8453","ensRegistrationTransaction":"0x…","moneyMode":"live","detail":"Save accountToken privately now…"}
-```
+Account tools require Authorization: Bearer <account_token>. Clients unable to set headers may reconnect to /api/mcp?token=<account_token>. Header/query conflicts, empty/duplicate tokens and invalid credentials fail closed; an invalid credential never falls back to anonymous. Anonymous non-enrollment calls say “use your account_token”. Token URLs are secrets; never show them to the owner or publish/log them. Approval URLs contain only a request UUID, never a token. Next dev excludes MCP requests from access logs; disable ngrok inspection/access logs yourself (run ngrok with --inspect=false). Use headers when possible.
 
-Only a SHA-256 token hash is stored. Duplicate names and Atlas are refused; knowing a name never retrieves a credential or replaces a wallet. A scoped token cannot enroll another name or supply another account ID. A failed provisioning response still returns its token once, with `status: failed` and any partial funding address: stop, do not fund it, and ask the owner to inspect it. Lost enrollment responses have no automatic recovery. New live enrollment requires both ENS signers and Sepolia RPC; it registers address, owner, gateway and an initial zero mandate commitment, updated on grant.
+The existing camelCase accountToken/fundingAddress response aliases and idempotencyKey input alias remain for compatibility. Use account_token, funding_address and idempotency_key in new clients. Do not resubmit payments under either the same key or a replacement key. For an uncertain outcome stop and inspect the statement with the owner; backend duplicate protection remains intact.
 
-New live enrollment also requires `PRIVY_SESSION_SIGNER_ID`, matching the gateway's authorization key. The Privy user is the sole wallet and policy owner; the gateway is only an additional signer with a vault/token-scoped override policy. Email is stored privately, never in ENS or Arkiv. An account token cannot change its owner's email. Atlas remains app-owned legacy. See [ownership and recovery limitations](OWNERSHIP.md); `OWNER_TOKEN` is operator authority, not proof of email ownership.
+## Anonymous enrollment limits
 
-Scoped `get_account` example (mock example, balance is not the budget):
+Five provisioning claims per IP per rolling hour, plus ten total per gateway per hour. Both checks and name reservation run under the same persistent store lock; failures still consume a slot, duplicate names do not. A keyed hash of the final forwarded IP is stored, never a raw IP. Missing/invalid forwarding addresses share a conservative bucket. The global ceiling bounds cost even if proxy headers are forged. This is a single-process demo limiter, not a distributed abuse defense. Owner-authenticated operator provisioning is not anonymous enrollment.
 
-```json
-{"name":"nova.agents.unflat.eth","wallet":"0x…","fundingAddress":"0x…","balance":{"rawAmount":"2000000"},"mandate":{"allowed":false,"reason":"REFUSED — no mandate exists."},"requestStatus":"pending","moneyMode":"mock"}
-```
+## Owner approval and identity
 
-Successful `pay` returns `{"transfer":{"transactionHash":"0x…","network":"eip155:8453","source":"privy-live","explorerUrl":"https://basescan.org/tx/0x…"},"decision":{"allowed":true,"reason":"APPROVED…"}}` (decision also includes checked time and remaining budget).
+approval_url opens /owner?request=<uuid>. The owner signs in through Privy email OTP, then reviews that single request and types CONFIRM to approve. The server verifies the Privy access token (signature, app audience, issuer and expiry), reads the user from Privy, and matches both verified owner_email and the stored Privy user ID. A URL, account token, client-supplied email or another Privy user cannot approve it. Owner mode lists only that logged-in user's accounts; foreign requests appear absent. Denial needs no CONFIRM and grants nothing. After approval: “Approved — your agent can act for 2 minutes”; approval status persists. The timer begins at grant, not at request.
 
-`save` returns `{vault, preflight, deposit, decision}`: approval proof is at `deposit.approval.transactionHash`, deposit proof at `deposit.deposit.transactionHash` / `deposit.deposit.explorerUrl`, and shares at `deposit.sharesReceivedRaw`, `deposit.sharesReceived`, `deposit.shareDecimals`. `preflight` contains the independently checked asset/balance/simulation evidence. Unavailable formatted shares are explicitly marked, never fabricated.
+OWNER_TOKEN remains a bank-operator API override only; it is never entered or displayed in the UI. It can manage legacy Atlas and all accounts. Raw operator mutation APIs and the scripted Atlas LIVE API retain their confirmation requirements. Human owners use scoped /api/owner/accounts, /api/owner/approvals and /api/owner/recovery with their Privy bearer token. Recovery requires ownership, CONFIRM and a fresh gateway mandate. Public Vercel refuses all these APIs and does not render Owner mode or /owner.
 
-`strategize` returns a strategy, for example `{"id":"<strategy-id>","summary":"<advisory text>","idleFundsUsdcCents":100,"advisoryVaultIds":[],"priceValidation":{"allPassed":true},"aimorganFeeMode":"waived"}` (price validation can include further checks). The gateway never accepts an arbitrary client-supplied strategy. After expiry a financial tool returns:
+## Operator setup and clients
 
-```json
-{"isError":true,"content":[{"type":"text","text":"REFUSED — mandate expired or absent: Arkiv returned no matching unexpired entity…"}]}
-```
+Configure Privy email login, embedded wallets, the current tunnel allowed origin, PRIVY_SESSION_SIGNER_ID matching PRIVY_AUTHORIZATION_PRIVATE_KEY, live adapters and OWNER_TOKEN. Restart Next after this store/runtime upgrade. Atlas is not migrated; see [ownership and recovery limits](OWNERSHIP.md).
 
-`statement` example event:
+Claude Code: `claude mcp add unflat --transport http https://circus-thicken-plod.ngrok-free.dev/api/mcp`. After enrollment, reconnect with the account bearer header or private token URL. Hermes uses the same Streamable HTTP URL under mcp_servers.unflat.url; after enrollment add the account Authorization header or private token URL. Restart/reconnect clients after changing credentials. Stdio npm run mcp starts anonymously when UNFLAT_ACCOUNT_TOKEN is absent, and otherwise forwards that account credential; UNFLAT_GATEWAY_URL selects the gateway. No wallet or owner key belongs on the agent laptop.
 
-```json
-{"name":"nova.agents.unflat.eth","mandate":{"allowed":false,"reason":"REFUSED — mandate expired or absent…"},"events":[{"action":"usdc.transfer","status":"refused","amountUsdcCents":5,"at":"<ISO time>","reason":"REFUSED — mandate expired or absent…"}]}
-```
+Standard job: open → owner funds → request/show approval link → wait for approval → pay 5 → save 100 → wait 120 seconds (and poll actual Arkiv expiry) → pay 5 once → report REFUSED, 15 cents remaining and statement. Live amounts are unchanged; tests use mock money.
 
-## Owner boundary
+Ngrok's browser interstitial is upstream of Next: adding a header inside this application cannot bypass an interstitial that never reached it. On 13 September 2026 (Europe/Rome), anonymous Node fetch initialize returned HTTP 200 JSON without a bypass header, and the actual Claude Code `claude mcp get unflat-readonly-check` reported `Status: ✓ Connected` using only the HTTP URL. No account or action tool was called. Hermes is not installed here; its python-httpx User-Agent profile also returned HTTP 200 JSON, but that is not an end-to-end Hermes verification. Browsers may need to visit the interstitial once; a blocked API client must send ngrok-skip-browser-warning:true or use a non-interstitial tunnel.
 
-`GET /api/owner/approvals` requires `OWNER_TOKEN` and lists pending requests from the local file store, with actual money mode and configured destination/vault. It does not return the agent credential hash. `POST` takes `{"id":"<request UUID>","action":"approve","confirmation":"CONFIRM"}` or `{"id":"<UUID>","action":"deny"}`. Approval creates the 120-second mandate with a $1.20 total/$1.00 per-action cap and fixed allowed actions. Duplicate approval or approval of a denied request fails. A failed/uncertain grant is not automatically retried.
-
-Other owner mutation APIs, including `POST /api/mandates`, require the owner bearer token **and** `X-Unflat-Confirmation: CONFIRM`. Scripted LIVE uses its existing body `confirmation`. Localhost alone is never sufficient. An agent token fails all owner APIs; an owner token fails MCP. On Vercel both are disabled regardless of hostname or credentials. Invalid authentication returns JSON `{error, detail}` and HTTP 403. No CORS access is enabled; browser requests with a foreign Origin fail.
-
-`GET /api/owner/accounts` lists all accounts, names, balances, funding addresses and provisioning/mandate status, without credential hashes. `POST` takes `{"accountId":"<uuid>","requestId":"<fresh-uuid>","confirmation":"CONFIRM"}` and grants that specific ready account the same budget through the approval path. The owner can manage Atlas without replacing its wallet, name or history.
-
-Owner-owned account rows also show owner email, ownership type and `/owner-wallet`, a separate Privy-authenticated screen for the human owner. A direct owner grant adds `earn.recall` and `owner.transfer`; approving an agent's pending request does not. `POST /api/owner/recovery` requires `OWNER_TOKEN` and a fresh active mandate with those permissions, plus body `confirmation: "CONFIRM"`. Example recall: `{"accountId":"<uuid>","requestId":"<fresh-uuid>","confirmation":"CONFIRM","action":"earn.recall","vaultAddress":"<allowlisted-address>","sharesRaw":"<positive-integer>"}`. Example transfer: replace the last three fields with `"action":"owner.transfer","recipient":"<owner-address>","amountUsdcCents":100`. Recall returns shares redeemed and assets received from the receipt; transfer returns its hash. Both appear in the statement. Neither is an MCP tool, neither accepts an agent token, and neither bypasses mandate/price/preflight checks. `POST /api/agents` is owner-only enrollment with `{displayName, owner_email}` and returns the same one-time enrollment result.
-
-Approvals bind to the account ID and its credential hash. Each new account has a separate wallet, ENS name, statement and budget; it cannot borrow Atlas's approval. Rotating the enrollment token does not replace accounts or revoke account tokens. The authorization source remains the fresh Arkiv query; pending/approved queue state alone never authorizes a signature. No x402/Privy call occurs after mandate refusal. The public snapshot and browser-owned Swarm secret handling are unchanged.
-
-## Tests
-
-`src/mcp/http.test.ts` runs the actual SDK HTTP client against the route with mocked financial/Arkiv dependencies: request → wrong-role/missing-CONFIRM rejection → owner approval → pay → save → expiry → refusal. It checks the six-tool inventory, $0.15 remaining, statement access after expiry, and zero subsequent signing/advice calls. Role tests deny localhost bypasses and all Vercel execution. File-store tests cover duplicate requests and concurrent approval claims across route instances. No Base money is used by these tests.
-
-Multi-account tests cover one-time enrollment, normalized name collisions, failed ENS provisioning without wallet replacement, hashed-token persistence, account isolation, Atlas preservation, per-account owner grants and outgoing idempotency-key separation. Browser tests verify separate funding addresses, unavailable balances and account-specific CONFIRM fields. Shared ENS signer writes are serialized until receipt confirmation to avoid nonce races between accounts; this coordination remains within the single gateway process.
+Tests cover discovery-only onboarding, one-time token handoff, header/query isolation, persistent concurrent enrollment limits, email ownership, per-request approval/CONFIRM, expiry refusal, and zero financial signing after expiry.

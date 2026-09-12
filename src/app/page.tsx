@@ -7,5 +7,5 @@ import { ownerModeAvailable } from "@/server/role-auth";
 export const dynamic = "force-dynamic";
 
 export default function Home() {
-  return <Dashboard realRun={realRun as RealRun} ownerModeAvailable={ownerModeAvailable()} />;
+  return <Dashboard realRun={realRun as RealRun} ownerModeAvailable={ownerModeAvailable()} privyAppId={process.env.VERCEL ? undefined : process.env.PRIVY_APP_ID?.trim()} />;
 }

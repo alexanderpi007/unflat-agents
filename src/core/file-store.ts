@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { IdempotencyError } from "./errors";
+import { checkEnrollmentLimit } from "./enrollment-limit";
 import type { GatewayStore } from "./ports";
 import type {
   Agent,
@@ -49,6 +50,7 @@ export class FileGatewayStore implements GatewayStore {
     return this.mutate(state => {
       if (account.name === "atlas" || Object.values(state.accounts).some(a => a.name === account.name)
         || Object.values(state.agents).some(a => a.ensName.toLowerCase() === `${account.name}.agents.unflat.eth`)) return false;
+      checkEnrollmentLimit(Object.values(state.accounts), account);
       state.accounts[account.id] = account;
       return true;
     });

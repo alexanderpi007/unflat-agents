@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("actual HTTPS tunnel: one click opens the inline owner token form", async ({ page }, testInfo) => {
+test("actual HTTPS tunnel: one click opens Privy email login", async ({ page }, testInfo) => {
   const errors: string[] = [];
   const writes: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -15,10 +15,13 @@ test("actual HTTPS tunnel: one click opens the inline owner token form", async (
   const owner = page.getByRole("button", { name: "Owner mode", exact: true });
   await owner.click();
   await expect(owner).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByLabel("Owner token", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Unlock Owner mode", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Owner token", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Log in with email", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in with email", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Log in with email", exact: true }).click();
+  await expect(page.locator('input[type="email"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("owner-inline.png") });
   expect(errors).toEqual([]);
-  expect(writes).toEqual([]);
+  expect(writes.filter(url => new URL(url).origin === new URL(page.url()).origin)).toEqual([]);
 });

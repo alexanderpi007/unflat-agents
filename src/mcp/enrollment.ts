@@ -6,7 +6,7 @@ import { tokenFingerprint } from "@/server/role-auth";
 export const accountName = z.string().trim().toLowerCase().min(1).max(36)
   .regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/, "Use one ENS label: letters, digits and internal hyphens.");
 
-export async function enroll(runtime: GatewayRuntime, input?: string, email?: string) {
+export async function enroll(runtime: GatewayRuntime, input?: string, email?: string, enrollmentIpHash?: string) {
   const parsed = accountName.safeParse(input);
   if (!parsed.success) throw new Error("REFUSED — enrollment requires get_account({name, owner_email}), one label of 1–36 letters/digits/internal hyphens.");
   const name = parsed.data;
@@ -24,7 +24,7 @@ export async function enroll(runtime: GatewayRuntime, input?: string, email?: st
   const id = randomUUID();
   const ownerId = await store.ensureOwnerId();
   const accountToken = `unflat_account_${randomBytes(32).toString("hex")}`;
-  if (!await store.reserveAccount({ id, name, ownerId, ownerEmail, tokenHash: tokenFingerprint(accountToken),
+  if (!await store.reserveAccount({ id, name, ownerId, ownerEmail, enrollmentIpHash, tokenHash: tokenFingerprint(accountToken),
     status: "provisioning", createdAt: runtime.deps.clock.now().toISOString() })) {
     throw new Error("REFUSED — name already reserved. Use that account's token; enrollment never retrieves tokens or replaces existing wallets. Atlas is reserved.");
   }

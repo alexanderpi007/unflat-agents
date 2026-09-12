@@ -6,7 +6,7 @@ import { RefusalResult } from "./refusal-result";
 import { ProofFooter } from "./proof-footer";
 import { OwnerRecord } from "./owner-record";
 import { OwnerControls, type DemoPlan } from "./demo-controls";
-import { OwnerAccess } from "./owner-access";
+import { OwnerLoginLoader } from "./owner-login-loader";
 import { DemoStepper } from "./demo-stepper";
 import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
@@ -40,7 +40,7 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const short = (value: string, width = 9) =>
   value.length > width * 2 ? `${value.slice(0, width)}…${value.slice(-width)}` : value;
 
-export function Dashboard({ realRun, ownerModeAvailable }: { realRun: RealRun; ownerModeAvailable: boolean }) {
+export function Dashboard({ realRun, ownerModeAvailable, privyAppId }: { realRun: RealRun; ownerModeAvailable: boolean; privyAppId?: string }) {
   const archivedResult: DemoResult = { snapshot: realRun.snapshot, moneyMode: "live", expired: true, phase: "Recorded LIVE run · read-only proof" };
   const [result, setResult] = useState<DemoResult>(archivedResult);
   const [showingRealRun, setShowingRealRun] = useState(true);
@@ -56,10 +56,16 @@ export function Dashboard({ realRun, ownerModeAvailable }: { realRun: RealRun; o
   const [previousEvents, setPreviousEvents] = useState<StatementEvent[]>([]);
   const [publicIdentity, setPublicIdentity] = useState<Partial<Agent>>();
   const [ownerMode, setOwnerMode] = useState(false);
+  const [approvalRequest, setApprovalRequest] = useState<string>();
   const [ownerToken, setOwnerToken] = useState("");
   const [plan, setPlan] = useState<DemoPlan>();
   const [walletAddress, setWalletAddress] = useState("");
   const runLock = useRef(false);
+
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get("request");
+    if (ownerModeAvailable && id) { setApprovalRequest(id); setOwnerMode(true); }
+  }, [ownerModeAvailable]);
 
   useEffect(() => {
     let active = true;
@@ -171,9 +177,7 @@ export function Dashboard({ realRun, ownerModeAvailable }: { realRun: RealRun; o
           <div className="hack-badge">ETHRome · 40H</div>
         </div>
       </header>
-      {ownerModeAvailable && ownerMode && <OwnerAccess onSession={(token, nextPlan) => { setOwnerToken(token); setPlan(nextPlan); }}>
-        <OwnerControls run={run} running={running} plan={plan} />
-      </OwnerAccess>}
+      {ownerModeAvailable && ownerMode && <OwnerLoginLoader appId={privyAppId} requestId={approvalRequest} />}
       <section className="hero" id="top">
         <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
           <h1>A bank account.<br /><em>Built to expire.</em></h1>

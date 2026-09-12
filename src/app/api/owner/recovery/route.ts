@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isAddress, zeroAddress } from "viem";
-import { requireRole } from "@/server/role-auth";
+import { authenticateOwner, requireOwnedAccount, type OwnerPrincipal } from "@/server/owner-auth";
 import { runtime } from "@/server/runtime";
 
 const address = z.string().refine(value => isAddress(value) && value.toLowerCase() !== zeroAddress).transform(value => value as `0x${string}`);
@@ -10,11 +10,15 @@ const input = z.discriminatedUnion("action", [
   z.object({ ...common, action: z.literal("owner.transfer"), recipient: address, amountUsdcCents: z.number().int().min(1).max(100) }).strict(),
 ]);
 export async function POST(request: Request) {
-  try { requireRole(request, "owner"); } catch {
-    return Response.json({ error: "Forbidden", detail: "Owner token required. Agent tokens cannot withdraw or recall. Disabled on Vercel." }, { status: 403 });
+  let owner: OwnerPrincipal;
+  try { owner = await authenticateOwner(request); } catch {
+    return Response.json({ error: "Forbidden", detail: "Privy owner login required. Agent tokens cannot withdraw or recall. Disabled on Vercel." }, { status: 403 });
   }
   try {
     const body = input.parse(await request.json());
+    try { await requireOwnedAccount(owner, runtime.deps.store, body.accountId); } catch {
+      return Response.json({ error: "Forbidden", detail: "This account does not belong to your verified Privy email." }, { status: 403 });
+    }
     const result = await runtime.gateway.ownerRecovery({ ...body, agentId: body.accountId,
       idempotencyKey: `owner-recovery:${body.accountId}:${body.requestId}`,
     });

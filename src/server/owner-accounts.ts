@@ -1,8 +1,9 @@
 import type { GatewayRuntime } from "./runtime";
 import { persistentAgentId } from "@/demo/dashboard-run";
 import { decideRequest } from "@/mcp/service";
+import { ownsAccount, type OwnerPrincipal } from "./owner-auth";
 
-export async function listOwnerAccounts(runtime: GatewayRuntime) {
+export async function listOwnerAccounts(runtime: GatewayRuntime, principal: OwnerPrincipal = { role: "operator" }) {
   const { store } = runtime.deps;
   const [agents, accounts] = await Promise.all([store.listAgents(), store.listAccounts()]);
   const ids = new Set(accounts.map(account => account.id));
@@ -15,6 +16,7 @@ export async function listOwnerAccounts(runtime: GatewayRuntime) {
   for (const id of ids) {
     const agent = agents.find(a => a.id === id);
     const account = accounts.find(a => a.id === id);
+    if (!ownsAccount(principal, account, agent)) continue;
     const balance = agent ? await runtime.gateway.usdcBalance(id).catch(() => null) : null;
     const mandate = await runtime.gateway.checkMandate(id);
     rows.push({ id, name: agent?.ensName ?? `${account!.name}.agents.unflat.eth`,
