@@ -40,7 +40,7 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const short = (value: string, width = 9) =>
   value.length > width * 2 ? `${value.slice(0, width)}…${value.slice(-width)}` : value;
 
-export function Dashboard({ realRun }: { realRun: RealRun }) {
+export function Dashboard({ realRun, ownerModeAvailable }: { realRun: RealRun; ownerModeAvailable: boolean }) {
   const archivedResult: DemoResult = { snapshot: realRun.snapshot, moneyMode: "live", expired: true, phase: "Recorded LIVE run · read-only proof" };
   const [result, setResult] = useState<DemoResult>(archivedResult);
   const [showingRealRun, setShowingRealRun] = useState(true);
@@ -55,7 +55,6 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
   const [liveState, setLiveState] = useState<LiveState>();
   const [previousEvents, setPreviousEvents] = useState<StatementEvent[]>([]);
   const [publicIdentity, setPublicIdentity] = useState<Partial<Agent>>();
-  const [localLiveAvailable, setLocalLiveAvailable] = useState(false);
   const [ownerMode, setOwnerMode] = useState(false);
   const [ownerToken, setOwnerToken] = useState("");
   const [plan, setPlan] = useState<DemoPlan>();
@@ -93,7 +92,6 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
         }
         if (active) {
           setPublicIdentity(body.identity);
-          setLocalLiveAvailable(body.ownerModeAvailable === true);
           setPlan(body.plan); setWalletAddress(body.walletAddress ?? "");
         }
       })
@@ -169,11 +167,11 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="unflat agents home"><span className="brand-mark">u</span> unflat <span className="brand-cross">×</span> agents</a>
         <a href="#proofs">What is real?</a><div className="header-actions">
-          {localLiveAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-access" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
+          {ownerModeAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-access" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
           <div className="hack-badge">ETHRome · 40H</div>
         </div>
       </header>
-      {localLiveAvailable && ownerMode && <OwnerAccess onSession={(token, nextPlan) => { setOwnerToken(token); setPlan(nextPlan); }}>
+      {ownerModeAvailable && ownerMode && <OwnerAccess onSession={(token, nextPlan) => { setOwnerToken(token); setPlan(nextPlan); }}>
         <OwnerControls run={run} running={running} plan={plan} />
       </OwnerAccess>}
       <section className="hero" id="top">
@@ -192,7 +190,7 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
           {!showingRealRun && <button className="back-to-real" disabled={running} onClick={() => {
             setShowingRealRun(true); setResult(archivedResult); setError(""); setQueryEvidence({});
           }}>Back to the real run</button>}
-          {localLiveAvailable && !showingRealRun && result.moneyMode === "live" && mandateExpired && <details><summary>Publish this video take</summary><p>Run <code>npm run export:real-run</code> locally, then commit public/real-run.json and redeploy.</p></details>}
+          {ownerModeAvailable && !showingRealRun && result.moneyMode === "live" && mandateExpired && <details><summary>Publish this video take</summary><p>Run <code>npm run export:real-run</code> locally, then commit public/real-run.json and redeploy.</p></details>}
           {error && <div className="demo-error"><p role="alert">Demo interrupted. Review the details before retrying.</p><details><summary>Error details</summary><p>{error}</p></details></div>}
         </section>
       </section>

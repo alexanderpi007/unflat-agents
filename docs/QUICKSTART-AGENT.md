@@ -17,6 +17,8 @@ ngrok http 3000
 
 Use the displayed HTTPS forwarding URL, for example `https://YOUR-TUNNEL.ngrok-free.app`. Keep the incoming Host unchanged (do not use ngrok host-header rewriting). The production build avoids Next dev/HMR origin issues. Open ngrok’s browser interstitial once if shown. HTTPS terminates at the tunnel provider; it is part of the trust boundary and its request inspector may capture Authorization headers. Do not publish inspection logs.
 
+If using `npm run dev`, the tunnel hostname must also appear in `next.config.ts` → `allowedDevOrigins` (currently `circus-thicken-plod.ngrok-free.dev`). Without it, Next rejects the dev WebSocket origin and the page may show static buttons that never respond. Use the exact hostname, not a wildcard. Next normally restarts automatically on config changes; refresh the browser afterward. Verify the actual tunnel with `UNFLAT_TUNNEL_URL=https://YOUR-TUNNEL.ngrok-free.app npx playwright test --config playwright.tunnel.config.ts`. This read-only test supplies `ngrok-skip-browser-warning: true` and opens the inline login form without entering any credentials or executing actions.
+
 ## Owner laptop — Giacomo
 
 1. Open `https://YOUR-TUNNEL.ngrok-free.app`, then **Owner mode**.

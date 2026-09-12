@@ -15,7 +15,7 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   });
   await page.goto("http://localhost:3107");
   await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Owner mode", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Owner mode", exact: true })).toBeVisible();
   await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
   const current = page.locator(".story-content > .timeline");
   await expect(current).not.toContainText("Simulated:");
@@ -34,6 +34,8 @@ test("owner token unlocks exact LIVE plan but cannot run without typed confirmat
   // Tunnel equivalent: browser sees HTTPS/non-loopback; preserve its Host at the local gateway.
   await page.route("https://owner-demo.example/**", async route => {
     const url = new URL(route.request().url());
+    // Login availability must not depend on the ENS/demo-state endpoint succeeding.
+    if (url.pathname === "/api/demo") return route.fulfill({ status: 503, json: { error: "Demo state unavailable" } });
     const response = await route.fetch({ url: `http://localhost:3107${url.pathname}${url.search}`,
       headers: { ...route.request().headers(), host: url.host } });
     await route.fulfill({ response });
