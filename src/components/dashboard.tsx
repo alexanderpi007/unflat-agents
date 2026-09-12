@@ -6,6 +6,7 @@ import { RefusalResult } from "./refusal-result";
 import { ProofFooter } from "./proof-footer";
 import { OwnerRecord } from "./owner-record";
 import { OwnerControls, type DemoPlan } from "./demo-controls";
+import { OwnerAccess } from "./owner-access";
 import { DemoStepper } from "./demo-stepper";
 import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
@@ -56,6 +57,7 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
   const [publicIdentity, setPublicIdentity] = useState<Partial<Agent>>();
   const [localLiveAvailable, setLocalLiveAvailable] = useState(false);
   const [ownerMode, setOwnerMode] = useState(false);
+  const [ownerToken, setOwnerToken] = useState("");
   const [plan, setPlan] = useState<DemoPlan>();
   const [walletAddress, setWalletAddress] = useState("");
   const runLock = useRef(false);
@@ -91,7 +93,7 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
         }
         if (active) {
           setPublicIdentity(body.identity);
-          setLocalLiveAvailable(body.localLiveAvailable === true && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname));
+          setLocalLiveAvailable(body.ownerModeAvailable === true);
           setPlan(body.plan); setWalletAddress(body.walletAddress ?? "");
         }
       })
@@ -112,7 +114,7 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
     setQueryEvidence({});
     setResult({ moneyMode: mode, phase: "Preparing real Arkiv mandate…" });
     try {
-      const response = await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json" },
+      const response = await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json", ...(mode === "live" ? { Authorization: `Bearer ${ownerToken}` } : {}) },
         body: JSON.stringify({ mode, confirmation, runId: crypto.randomUUID() }) });
       if (!response.ok) { const body = await response.json(); throw new Error(`${body.error}: ${body.detail}`); }
       if (!response.body) throw new Error("Demo stream unavailable.");
@@ -167,11 +169,13 @@ export function Dashboard({ realRun }: { realRun: RealRun }) {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="unflat agents home"><span className="brand-mark">u</span> unflat <span className="brand-cross">×</span> agents</a>
         <a href="#proofs">What is real?</a><div className="header-actions">
-          {localLiveAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-money" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
+          {localLiveAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-access" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
           <div className="hack-badge">ETHRome · 40H</div>
         </div>
       </header>
-      {localLiveAvailable && ownerMode && <OwnerControls run={run} running={running} plan={plan} />}
+      {localLiveAvailable && ownerMode && <OwnerAccess onSession={(token, nextPlan) => { setOwnerToken(token); setPlan(nextPlan); }}>
+        <OwnerControls run={run} running={running} plan={plan} />
+      </OwnerAccess>}
       <section className="hero" id="top">
         <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
           <h1>A bank account.<br /><em>Built to expire.</em></h1>

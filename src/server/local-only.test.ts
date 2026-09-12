@@ -27,12 +27,15 @@ it("Vercel rejects LIVE even with spoofed localhost and CONFIRM", async () => {
   vi.stubEnv("VERCEL", "1");
   const response = await POST(request("http://localhost:3000/api/demo"));
   expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({ error: "LIVE execution forbidden.", detail: expect.stringContaining("localhost-only") });
+  expect(await response.json()).toMatchObject({ error: "LIVE execution forbidden.", detail: expect.stringContaining("disabled on Vercel") });
 });
 
 it("missing typed confirmation is rejected before adapters are called", async () => {
   vi.stubEnv("VERCEL", "");
+  vi.stubEnv("OWNER_TOKEN", "test-owner-token-not-a-secret-123456789");
+  vi.stubEnv("MCP_AGENT_TOKEN", "test-agent-token-not-a-secret-123456789");
   const req = request("http://localhost:3000/api/demo");
+  req.headers.set("Authorization", "Bearer test-owner-token-not-a-secret-123456789");
   const response = await POST(new Request(req, { body: JSON.stringify({ mode: "live", runId: "a7100000-0000-4000-8000-000000000002" }) }));
   expect(response.status).toBe(400);
 });

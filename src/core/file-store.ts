@@ -1,11 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { IdempotencyError } from "./errors";
 import type { GatewayStore } from "./ports";
 import type {
   Agent,
   Mandate,
+  MandateRequest,
   MandateCommitmentOpening,
   StatementEvent,
   StoredIdempotency,
@@ -13,6 +14,7 @@ import type {
 } from "./types";
 
 interface StoreState {
+  approvals: MandateRequest[];
   agents: Record<string, Agent>;
   mandates: Record<string, Mandate>;
   mandateOpenings: Record<string, MandateCommitmentOpening>;
@@ -22,6 +24,7 @@ interface StoreState {
 }
 
 const emptyState = (): StoreState => ({
+  approvals: [],
   agents: {},
   mandates: {},
   mandateOpenings: {},
@@ -30,22 +33,45 @@ const emptyState = (): StoreState => ({
   idempotency: {},
 });
 
-export class FileGatewayStore implements GatewayStore {
-  private tail: Promise<void> = Promise.resolve();
+// Next routes can instantiate separate stores; serialize all access to the same file.
+const shared = globalThis as typeof globalThis & { unflatStoreLocks?: Map<string, Promise<void>> };
+const locks = shared.unflatStoreLocks ??= new Map();
 
+export class FileGatewayStore implements GatewayStore {
+  async requestApproval(request: MandateRequest) {
+    return this.mutate(state => {
+      const existing = state.approvals.find(r => r.principal === request.principal && ["pending", "approving"].includes(r.status));
+      if (existing) return existing;
+      state.approvals.push(request);
+      return request;
+    });
+  }
+  async listApprovals() { return this.inspect(state => state.approvals); }
+  async transitionApproval(id: string, from: MandateRequest["status"], to: MandateRequest["status"], mandateId?: string) {
+    return this.mutate(state => {
+      const request = state.approvals.find(r => r.id === id && r.status === from);
+      if (!request) return false;
+      request.status = to;
+      if (mandateId) request.mandateId = mandateId;
+      return true;
+    });
+  }
   constructor(private readonly filePath: string) {}
 
   private async locked<T>(work: () => Promise<T>): Promise<T> {
-    const previous = this.tail;
+    const key = resolve(this.filePath);
+    const previous = locks.get(key) ?? Promise.resolve();
     let release = () => {};
-    this.tail = new Promise<void>((resolve) => {
+    const tail = new Promise<void>((resolve) => {
       release = resolve;
     });
+    locks.set(key, tail);
     await previous;
     try {
       return await work();
     } finally {
       release();
+      if (locks.get(key) === tail) locks.delete(key);
     }
   }
 

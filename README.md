@@ -19,7 +19,7 @@ npm run dev
 
 The dashboard opens on the committed, read-only LIVE evidence in [`public/real-run.json`](public/real-run.json). **Run a simulation →** temporarily replaces it with simulated money and real Arkiv expiry; **Back to the real run** restores the archive. Loading the archive sends no transactions and never authorizes spending.
 
-For a new video take, use localhost **Owner mode** and its unchanged LIVE confirmation. After the complete run (including expiry/refusal), run `npm run export:real-run`, review `public/real-run.json`, commit it, and redeploy. The exporter reads the local gateway store, rejects incomplete/mock runs, and whitelists public fields; wallet-service IDs, mandate openings/secrets, idempotency data and Swarm references are not exported. It never signs or broadcasts. Public deployments only read this file; they cannot refresh it from a private store. Set the funded `ARKIV_PRIVATE_KEY` in `.env` for simulations with real expiry.
+For a new video take, open **Owner mode** on the local gateway or its HTTPS tunnel, authenticate with `OWNER_TOKEN`, and type the LIVE confirmation. After the complete run (including expiry/refusal), run `npm run export:real-run`, review `public/real-run.json`, commit it, and redeploy. The exporter reads the local gateway store, rejects incomplete/mock runs, and whitelists public fields; wallet-service IDs, mandate openings/secrets, idempotency data and Swarm references are not exported. It never signs or broadcasts. Public deployments only read this file; they cannot refresh it from a private store. Set the funded `ARKIV_PRIVATE_KEY` in `.env` for simulations with real expiry.
 
 The dashboard streams each step with runtime timestamps and a real 60-block (nominally two-minute) Arkiv lifetime:
 
@@ -39,7 +39,7 @@ The fully mocked safety-net sequence runs in a terminal:
 npm run demo:mock
 ```
 
-On localhost only, **Run LIVE (Base mainnet)** displays the exact configured recipient/vault and requires typing **CONFIRM**. It reuses the wallet ID in the local persistent store, transfers 0.05 USDC, approves/deposits 1.00 USDC through Privy, and waits for the real Arkiv expiry/refusal. Total: 1.05 USDC plus gas. The LIVE button never renders on Vercel; the backend rejects deployed or non-loopback requests even if Host is spoofed. Do not expose the local server through a tunnel. A confirmation is spending consent, not production owner authentication.
+On the local gateway or its temporary HTTPS tunnel, **Owner mode** requires the separate `OWNER_TOKEN`, kept in the browser tab’s session. **Run LIVE (Base mainnet)** displays the configured recipient/vault and requires typing **CONFIRM**. It reuses the stored wallet, transfers 0.05 USDC, approves/deposits 1.00 USDC through Privy, then waits for Arkiv expiry/refusal. Total: 1.05 USDC plus gas. Localhost is not authentication. Vercel never renders Owner mode and rejects all owner/MCP execution, even with valid tokens or spoofed hosts. See the [two-laptop quickstart](docs/QUICKSTART-AGENT.md); keep the tunnel open only during the demo.
 
 ## What is live vs mock
 
@@ -158,28 +158,17 @@ npm run mcp        # stdio MCP adapter (gateway must be running)
 | `POST` | `/api/actions/sweep` | Sweep by trusted server-side strategy ID |
 | `GET` | `/api/agents/:agentId` | Agent, mandate, and readable statement events |
 | `POST` | `/api/statements` | Returns JSON 409 directing publication to the owner's browser; accepts no reference/key |
-| `POST` | `/api/demo` | NDJSON streaming mock-money/real-Arkiv run, or confirmed localhost-only LIVE run |
+| `POST` | `/api/demo` | NDJSON mock-money/real-Arkiv run, or owner-token + CONFIRM LIVE run (never Vercel) |
+| `POST` | `/api/mcp` | Six agent tools; MCP_AGENT_TOKEN required, disabled on Vercel |
+| `GET` / `POST` | `/api/owner/approvals` | Owner-token protected pending queue / approve or deny; approval also requires CONFIRM |
 | `GET` | `/api/vault` | Live Morpho API APY or an unavailable marker in mock mode |
 | `GET` | `/api/health` | Per-adapter live/mock mode and reason |
 
 ## MCP
 
-The stdio MCP server is deliberately a thin client of the HTTP gateway. It has no signing adapter and cannot bypass mandate checks.
+Streamable HTTP at `/api/mcp` and the retained `npm run mcp` stdio bridge expose exactly `get_account`, `request_mandate`, `pay`, `strategize`, `save`, and `statement`. No agent tool grants permission. Owner approval is a separate bearer-token role, with typed CONFIRM for a two-minute, $1.20 cap mandate. Financial/advice tools still go through the gateway and fresh Arkiv checks. Read/request tools work without an active mandate.
 
-```json
-{
-  "mcpServers": {
-    "unflat-agents": {
-      "command": "npm",
-      "args": ["run", "mcp"],
-      "cwd": "/absolute/path/to/unflat-agents",
-      "env": { "UNFLAT_GATEWAY_URL": "http://localhost:3000" }
-    }
-  }
-}
-```
-
-Tools: `create_agent`, `grant_mandate`, `pay_x402`, `transfer_usdc`, `strategize`, `sweep_idle`, and `get_agent_statement`.
+Use the [owner laptop / agent laptop quickstart](docs/QUICKSTART-AGENT.md) and [tool inputs/outputs](docs/MCP.md). Set distinct `OWNER_TOKEN` and `MCP_AGENT_TOKEN` in `.env`; give only the owner token to Giacomo and only the agent token to the agent. Existing raw mutation APIs also require the owner bearer token plus `X-Unflat-Confirmation: CONFIRM`; the agent token cannot use them. Account-state REST reads require the owner token. Vercel exposes neither owner execution nor MCP execution.
 
 ## Adapter modes
 

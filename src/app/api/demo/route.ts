@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiFailure } from "@/app/api/responses";
 import { invalidRequest } from "@/app/api/responses";
 import { runtime as gatewayRuntime } from "@/server/runtime";
-import { isLocalRequest, requireLocalMutation } from "@/server/local-only";
+import { ownerModeAvailable, requireRole, sameBrowserOrigin } from "@/server/role-auth";
 import { dashboardRuntime, demoAgent, persistentAgentId, persistentWalletAddress, requireDemoAdapters, runDashboardSequence } from "@/demo/dashboard-run";
 
 export const runtime = "nodejs";
@@ -12,17 +12,18 @@ let running = false;
 
 export async function GET(request: Request) {
   try {
-    const local = isLocalRequest(request);
-    const state = local && await gatewayRuntime.deps.store.getAgent(persistentAgentId)
+    let owner = false;
+    try { requireRole(request, "owner"); owner = true; } catch { /* Public read-only view. */ }
+    const state = owner && await gatewayRuntime.deps.store.getAgent(persistentAgentId)
       ? await gatewayRuntime.gateway.state(persistentAgentId) : null;
     const resolved = await gatewayRuntime.gateway.resolveIdentity("atlas.agents.unflat.eth").catch(() => null);
     const identity = { displayName: "Atlas", ensName: "atlas.agents.unflat.eth", walletAddress: persistentWalletAddress,
       ensResolvedAddress: resolved?.address ?? null, ensMode: resolved?.mode, ensExplorerUrl: resolved?.explorerUrl,
       ensRegistrationTransaction: resolved?.mode === "live" ? "0xb3026ea2ad2d53cd463fbe47a3cfcda39c218d7f53b78a6836fc9a54adfaf5bf" : undefined };
     const vault = gatewayRuntime.deps.vaultAllowlist.find(v => v.execution === "direct-morpho");
-    return Response.json({ state, identity, localLiveAvailable: local, walletAddress: persistentWalletAddress,
-      plan: { recipient: gatewayRuntime.deps.demoPaymentRecipient, vault: vault?.address,
-        transferUsdc: "0.05", depositUsdc: "1.00", totalUsdc: "1.05", network: "Base mainnet", fee: "plus gas" } },
+    return Response.json({ state, identity, ownerModeAvailable: ownerModeAvailable(), localLiveAvailable: owner, walletAddress: persistentWalletAddress,
+      plan: owner ? { recipient: gatewayRuntime.deps.demoPaymentRecipient, vault: vault?.address,
+        transferUsdc: "0.05", depositUsdc: "1.00", totalUsdc: "1.05", network: "Base mainnet", fee: "plus gas" } : undefined },
     { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiFailure(error, "Live demo state could not be read.");
@@ -37,9 +38,9 @@ export async function POST(request: Request) {
     if (!parsed.success) return invalidRequest(parsed.error.flatten());
     const { mode, confirmation, runId } = parsed.data;
     if (mode === "live") {
-      try { requireLocalMutation(request); } catch (error) { return apiFailure(error, "LIVE execution forbidden.", 403); }
+      try { requireRole(request, "owner"); } catch (error) { return apiFailure(error, "LIVE execution forbidden.", 403); }
       if (confirmation !== "CONFIRM") return invalidRequest("Type CONFIRM to authorize exactly 1.05 USDC plus Base gas.");
-    } else if (request.headers.get("origin") !== new URL(request.url).origin) {
+    } else if (!sameBrowserOrigin(request)) {
       return apiFailure(new Error("Same-origin browser request required."), "Demo request forbidden.", 403);
     }
     if (running) return apiFailure(new Error("A demo is already running in this process."), "Demo busy.", 409);

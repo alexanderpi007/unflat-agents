@@ -15,6 +15,7 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   });
   await page.goto("http://localhost:3107");
   await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Owner mode", exact: true })).toHaveCount(0);
   await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
   const current = page.locator(".story-content > .timeline");
   await expect(current).not.toContainText("Simulated:");
@@ -29,17 +30,65 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   expect(posts).toBe(1);
 });
 
-test("localhost shows exact LIVE plan but cannot run without typed confirmation", async ({ page }) => {
-  await page.goto("http://localhost:3107");
+test("owner token unlocks exact LIVE plan but cannot run without typed confirmation", async ({ page }) => {
+  // Tunnel equivalent: browser sees HTTPS/non-loopback; preserve its Host at the local gateway.
+  await page.route("https://owner-demo.example/**", async route => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({ url: `http://localhost:3107${url.pathname}${url.search}`,
+      headers: { ...route.request().headers(), host: url.host } });
+    await route.fulfill({ response });
+  });
+  await page.goto("https://owner-demo.example");
   const live = page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true });
   await expect(live).toHaveCount(0);
   await page.getByRole("button", { name: "Owner mode", exact: true }).click();
+  await expect(live).toHaveCount(0);
+  await page.getByLabel("Owner token", { exact: true }).fill("test-agent-token-not-a-secret-123456789");
+  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  await expect(page.locator("#owner-access").getByRole("alert")).toContainText("Use OWNER_TOKEN");
+  await expect(live).toHaveCount(0);
+  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
+  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
   await expect(live).toBeVisible();
   await expect(live).toBeDisabled();
+  await page.reload();
+  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
+  await expect(live).toBeVisible();
+  await expect(live).toBeDisabled();
+  expect(page.url()).not.toContain("token");
   await expect(page.getByText(/Total 1.05 USDC plus gas/)).toBeVisible();
   await page.locator("#live-confirm").fill("confirm");
   await expect(live).toBeDisabled();
+  await page.getByRole("button", { name: "Sign out owner" }).click();
+  await expect(live).toHaveCount(0);
   // Never click LIVE in browser tests. Real chain writes belong to the separate Arkiv test only.
+});
+
+test("owner approvals require a separate typed confirmation for each request", async ({ page }) => {
+  const id = "a7100000-0000-4000-8000-000000000088";
+  const pending = [{ id, agentId: "test-agent", purpose: "Pay five cents and save one dollar." }];
+  const actions: unknown[] = [];
+  await page.route("**/api/owner/approvals", async route => {
+    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    if (route.request().method() === "POST") {
+      actions.push(route.request().postDataJSON()); pending.length = 0;
+      return route.fulfill({ json: { status: "approved" } });
+    }
+    return route.fulfill({ json: { pending, moneyMode: "mock", recipient: "test-recipient", vault: "test-vault" } });
+  });
+  await page.goto("http://localhost:3107");
+  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
+  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
+  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  const approve = page.getByRole("button", { name: "Approve (2 minutes, $1.20 cap)", exact: true });
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("Type CONFIRM to approve this budget").fill("confirm");
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("Type CONFIRM to approve this budget").fill("CONFIRM");
+  await approve.click();
+  await expect(page.getByText("Approved. The agent has two minutes to act.")).toBeVisible();
+  expect(actions).toEqual([{ id, action: "approve", confirmation: "CONFIRM" }]);
+  await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toBeDisabled();
 });
 
 test("native encryption request, dev deferred mode, fresh-context retrieval and no gateway reference leak", async ({ browser }) => {

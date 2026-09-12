@@ -591,6 +591,10 @@ export class SigningGateway {
     return this.deps.arkiv.findValidMandates(agentId);
   }
 
+  async checkMandate(agentId: string) {
+    return this.mandates.decide(agentId, "usdc.transfer", 0);
+  }
+
   async resolveIdentity(name: string) {
     return this.deps.ens.resolveIdentity(name);
   }

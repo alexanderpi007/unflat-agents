@@ -7,6 +7,7 @@ import type {
   DirectVaultTransaction,
   HexAddress,
   Mandate,
+  MandateRequest,
   MandateCommitmentOpening,
   PriceValidation,
   EarnDepositResult,
@@ -27,6 +28,9 @@ export interface Clock {
 }
 
 export interface GatewayStore {
+  requestApproval(request: MandateRequest): Promise<MandateRequest>;
+  listApprovals(): Promise<MandateRequest[]>;
+  transitionApproval(id: string, from: MandateRequest["status"], to: MandateRequest["status"], mandateId?: string): Promise<boolean>;
   putAgent(agent: Agent): Promise<void>;
   getAgent(agentId: string): Promise<Agent | undefined>;
   putMandate(mandate: Mandate): Promise<void>;

@@ -14,7 +14,7 @@ const inputSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    try { requireLocalMutation(request); } catch (error) { return apiFailure(error, "Local execution only.", 403); }
+    try { requireOwnerMutation(request); } catch (error) { return apiFailure(error, "Owner authorization required.", 403); }
     const parsed = inputSchema.safeParse(await request.json());
     if (!parsed.success) return invalidRequest(parsed.error.flatten());
     const input = parsed.data;
@@ -26,4 +26,4 @@ export async function POST(request: Request) {
     return apiFailure(error, "USDC transfer failed.");
   }
 }
-import { requireLocalMutation } from "@/server/local-only";
+import { requireOwnerMutation } from "@/server/role-auth";

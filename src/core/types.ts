@@ -3,6 +3,16 @@ export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | 
 export type HexAddress = `0x${string}`;
 export type HexHash = `0x${string}`;
 
+export interface MandateRequest {
+  id: string;
+  agentId: string;
+  principal: string;
+  purpose: string;
+  createdAt: string;
+  status: "pending" | "approving" | "approved" | "denied" | "failed";
+  mandateId?: string;
+}
+
 export interface Agent {
   id: string;
   displayName: string;

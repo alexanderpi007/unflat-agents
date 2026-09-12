@@ -2,6 +2,7 @@ import type { GatewayStore } from "./ports";
 import type {
   Agent,
   Mandate,
+  MandateRequest,
   MandateCommitmentOpening,
   StatementEvent,
   StoredIdempotency,
@@ -10,6 +11,25 @@ import type {
 import { IdempotencyError } from "./errors";
 
 export class MemoryGatewayStore implements GatewayStore {
+  private readonly approvals: MandateRequest[] = [];
+  async requestApproval(request: MandateRequest) {
+    return this.locked(() => {
+      const existing = this.approvals.find(r => r.principal === request.principal && ["pending", "approving"].includes(r.status));
+      if (existing) return structuredClone(existing);
+      this.approvals.push(structuredClone(request));
+      return request;
+    });
+  }
+  async listApprovals() { return structuredClone(this.approvals); }
+  async transitionApproval(id: string, from: MandateRequest["status"], to: MandateRequest["status"], mandateId?: string) {
+    return this.locked(() => {
+      const request = this.approvals.find(r => r.id === id && r.status === from);
+      if (!request) return false;
+      request.status = to;
+      if (mandateId) request.mandateId = mandateId;
+      return true;
+    });
+  }
   private readonly agents = new Map<string, Agent>();
   private readonly mandates = new Map<string, Mandate>();
   private readonly mandateOpenings = new Map<string, MandateCommitmentOpening>();
