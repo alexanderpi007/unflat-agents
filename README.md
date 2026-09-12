@@ -159,7 +159,8 @@ npm run mcp        # stdio MCP adapter (gateway must be running)
 | `GET` | `/api/agents/:agentId` | Agent, mandate, and readable statement events |
 | `POST` | `/api/statements` | Returns JSON 409 directing publication to the owner's browser; accepts no reference/key |
 | `POST` | `/api/demo` | NDJSON mock-money/real-Arkiv run, or owner-token + CONFIRM LIVE run (never Vercel) |
-| `POST` | `/api/mcp` | Six agent tools; MCP_AGENT_TOKEN required, disabled on Vercel |
+| `POST` | `/api/mcp` | Six tools; enrollment token creates an account, account token required thereafter; disabled on Vercel |
+| `GET` / `POST` | `/api/owner/accounts` | Owner-token protected account balances/funding addresses; grant per account with CONFIRM |
 | `GET` / `POST` | `/api/owner/approvals` | Owner-token protected pending queue / approve or deny; approval also requires CONFIRM |
 | `GET` | `/api/vault` | Live Morpho API APY or an unavailable marker in mock mode |
 | `GET` | `/api/health` | Per-adapter live/mock mode and reason |
@@ -169,6 +170,8 @@ npm run mcp        # stdio MCP adapter (gateway must be running)
 Streamable HTTP at `/api/mcp` and the retained `npm run mcp` stdio bridge expose exactly `get_account`, `request_mandate`, `pay`, `strategize`, `save`, and `statement`. No agent tool grants permission. Owner approval is a separate bearer-token role, with typed CONFIRM for a two-minute, $1.20 cap mandate. Financial/advice tools still go through the gateway and fresh Arkiv checks. Read/request tools work without an active mandate.
 
 Use the [owner laptop / agent laptop quickstart](docs/QUICKSTART-AGENT.md) and [tool inputs/outputs](docs/MCP.md). Set distinct `OWNER_TOKEN` and `MCP_AGENT_TOKEN` in `.env`; give only the owner token to Giacomo and only the agent token to the agent. Existing raw mutation APIs also require the owner bearer token plus `X-Unflat-Confirmation: CONFIRM`; the agent token cannot use them. Account-state REST reads require the owner token. Vercel exposes neither owner execution nor MCP execution.
+
+`MCP_AGENT_TOKEN` is enrollment-only: `get_account({name:"nova"})` creates a new Privy wallet and `nova.agents.unflat.eth`, returning its funding address and a **per-account token once**. Reconnect using that token for every later call. The store retains only token hashes; names cannot be reclaimed to recover a token. Owner mode lists all accounts and lets the human fund and grant/approve each separately. A stable public owner ID is written to ENS, never the owner secret. Atlas's existing wallet, name and history stay unchanged. Restart the local server after this store-schema upgrade; public Vercel behavior is unchanged.
 
 ## Adapter modes
 

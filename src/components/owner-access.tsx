@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { DemoPlan } from "./demo-controls";
+import { OwnerAccounts } from "./owner-accounts";
 
 const sessionKey = "unflat-owner-token";
-type Queue = DemoPlan & { moneyMode: string; pending: { id: string; purpose: string; agentId: string }[] };
+type Queue = DemoPlan & { moneyMode: string; pending: { id: string; name?: string; purpose: string; agentId: string }[] };
 
 export function OwnerAccess({ children, onSession }: {
   children: ReactNode; onSession: (token: string, plan?: DemoPlan) => void;
@@ -96,7 +97,7 @@ export function OwnerAccess({ children, onSession }: {
         <h2>Owner approvals</h2>
         {queue?.pending.length === 0 && <p>No pending requests. Ask the agent to call request_mandate.</p>}
         {queue?.pending.map(request => <article key={request.id}>
-          <h3>Agent request</h3><p>{request.purpose}</p>
+          <h3>{request.name ?? request.agentId}</h3><p>{request.purpose}</p>
           <p>2 minutes · $1.20 total cap · $1.00 per action · {queue.moneyMode === "live" ? "Base mainnet + gas" : "mock money"}</p>
           <details><summary>Approval details</summary><p>Agent: {request.agentId}</p><p>Each pay sends 0.05 USDC to {queue.recipient}. Save deposits 1.00 USDC into {queue.vault}. Advice is fee-waived. The agent may repeat actions within the $1.20 cap.</p></details>
           <label htmlFor={`approve-${request.id}`}>Type CONFIRM to approve this budget</label>
@@ -105,6 +106,7 @@ export function OwnerAccess({ children, onSession }: {
           <button disabled={busy || confirmations[request.id] !== "CONFIRM"} onClick={() => void decide(request.id, "approve")}>Approve (2 minutes, $1.20 cap)</button>
           <button disabled={busy} onClick={() => void decide(request.id, "deny")}>Deny</button>
         </article>)}
+        <OwnerAccounts token={token} onGranted={() => { void refresh(token).catch(() => setError("Refresh approvals to check the new grant.")); }} />
       </>}
       {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     </div>

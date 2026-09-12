@@ -7,6 +7,7 @@ import { persistentAgentId } from "@/demo/dashboard-run";
 import { runtime } from "@/server/runtime";
 import { POST, GET } from "@/app/api/mcp/route";
 import { POST as approve, GET as approvals } from "@/app/api/owner/approvals/route";
+import { GET as accounts, POST as grant } from "@/app/api/owner/accounts/route";
 
 vi.mock("@/server/runtime", async importOriginal => {
   const actual = await importOriginal<typeof import("@/server/runtime")>();
@@ -26,21 +27,40 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
+async function connect(token: string) {
+  const client = new Client({ name: "fake-agent", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(base + "/api/mcp"), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    fetch: async (url, init) => { const req = new Request(url, init); return req.method === "POST" ? POST(req) : GET(req); },
+  }));
+  return client;
+}
+function body(result: Awaited<ReturnType<Client["callTool"]>>) {
+  return JSON.parse((result.content as { text: string }[])[0].text);
+}
+
 it("fake HTTP client: request → remote owner CONFIRM → pay → save → expiry → refusal", async () => {
   await runtime.gateway.getOrCreateAgent(persistentAgentId, "Atlas");
-  const client = new Client({ name: "fake-agent", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(base + "/api/mcp"), {
-    requestInit: { headers: { Authorization: `Bearer ${agent}` } },
-    fetch: async (url, init) => {
-      const req = new Request(url, init);
-      return req.method === "POST" ? POST(req) : GET(req);
-    },
-  });
-  await client.connect(transport);
+  const atlas = await runtime.deps.store.getAgent(persistentAgentId);
+  const enrollment = await connect(agent);
+  expect((await enrollment.callTool({ name: "statement", arguments: {} })).isError).toBe(true);
+  const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "Nova" } }));
+  expect(created).toMatchObject({ name: "nova.agents.unflat.eth", status: "ready" });
+  expect(created.accountToken).toMatch(/^unflat_account_[a-f0-9]{64}$/);
+  expect(created.fundingAddress).not.toBe(atlas!.walletAddress);
+  const duplicate = await enrollment.callTool({ name: "get_account", arguments: { name: "nova" } });
+  expect(duplicate.isError).toBe(true);
+  expect(JSON.stringify(duplicate)).not.toContain(created.accountToken);
+  expect((await enrollment.callTool({ name: "get_account", arguments: { name: "atlas" } })).isError).toBe(true);
+  await enrollment.close();
+  const client = await connect(created.accountToken);
   try {
     expect((await client.listTools()).tools.map(t => t.name).sort()).toEqual(["get_account", "pay", "request_mandate", "save", "statement", "strategize"]);
     const tool = (name: string, args = {}) => client.callTool({ name, arguments: args });
-    expect((await tool("get_account")).isError).not.toBe(true);
+    const account = await tool("get_account");
+    expect(account.isError).not.toBe(true);
+    expect(JSON.stringify(account)).not.toContain(created.accountToken);
+    expect((await tool("get_account", { name: "atlas" })).isError).toBe(true);
     expect((await tool("statement")).isError).not.toBe(true);
     expect((await tool("grant_mandate")).isError).toBe(true);
     expect((await tool("request_mandate", { purpose: "Send five cents, save one dollar." })).isError).not.toBe(true);
@@ -74,7 +94,58 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
     expect(JSON.stringify(statement)).not.toContain(owner);
     expect(JSON.stringify(statement)).not.toContain(agent);
     expect((await tool("get_account")).isError).not.toBe(true);
+    expect(await runtime.deps.store.getAgent(persistentAgentId)).toEqual(atlas);
+    expect(await runtime.deps.store.getMandate(persistentAgentId)).toBeUndefined();
   } finally { await client.close(); }
+});
+
+it("two scoped clients cannot read, spend, save or grant for each other; owner sees both balances", async () => {
+  const enrollment = await connect(agent);
+  const first = body(await enrollment.callTool({ name: "get_account", arguments: { name: "comet" } }));
+  const second = body(await enrollment.callTool({ name: "get_account", arguments: { name: "luna" } }));
+  const one = await connect(first.accountToken), two = await connect(second.accountToken);
+  try {
+    expect(first.fundingAddress).not.toBe(second.fundingAddress);
+    expect(first.ownerId).toBe(second.ownerId);
+    expect(first.ownerId).not.toContain(owner);
+    const tokenHash = (await runtime.deps.store.getAccount(first.accountId))!.tokenHash;
+    expect(tokenHash).not.toBe(first.accountToken);
+    expect((await accounts(request("/api/owner/accounts", second.accountToken))).status).toBe(403);
+    expect((await grant(request("/api/owner/accounts", agent, { accountId: first.accountId, confirmation: "CONFIRM", requestId: "a7100000-0000-4000-8000-000000000070" }))).status).toBe(403);
+    const grantInput = { accountId: first.accountId, confirmation: "CONFIRM", requestId: "a7100000-0000-4000-8000-000000000070" };
+    expect((await grant(request("/api/owner/accounts", owner, { ...grantInput, confirmation: "" }))).status).toBe(400);
+    expect((await grant(request("/api/owner/accounts", owner, grantInput))).status).toBe(200);
+    expect((await grant(request("/api/owner/accounts", owner, grantInput))).status).toBe(400);
+    expect((await one.callTool({ name: "pay", arguments: { amountUsdcCents: 5, idempotencyKey: "comet-pay" } })).isError).not.toBe(true);
+    for (const name of ["pay", "save", "strategize"]) {
+      expect((await two.callTool({ name, arguments: { ...(name === "strategize" ? {} : { amountUsdcCents: name === "pay" ? 5 : 100 }), idempotencyKey: `luna-${name}` } })).isError).toBe(true);
+    }
+    expect((await two.callTool({ name: "statement", arguments: { accountId: first.accountId } })).isError).toBe(true);
+    const ownStatement = body(await two.callTool({ name: "statement", arguments: {} }));
+    expect(ownStatement.name).toBe("luna.agents.unflat.eth");
+    expect(ownStatement.events.some((event: { action: string }) => event.action === "usdc.transfer")).toBe(false);
+    for (const name of ["pay", "save", "statement", "request_mandate", "strategize"]) {
+      const args = name === "request_mandate" ? { purpose: "must refuse" } : name === "statement" ? {} : { ...(name === "strategize" ? {} : { amountUsdcCents: name === "pay" ? 5 : 100 }), idempotencyKey: `enrollment-${name}` };
+      expect((await enrollment.callTool({ name, arguments: args })).isError).toBe(true);
+    }
+    const listed = await (await accounts(request("/api/owner/accounts", owner))).json();
+    expect(listed.accounts.find((a: { id: string }) => a.id === second.accountId)).toMatchObject({ fundingAddress: second.fundingAddress, balance: { amountUsdcCents: expect.any(Number) } });
+    expect(JSON.stringify(listed)).not.toContain(first.accountToken);
+    expect(JSON.stringify(listed)).not.toContain(tokenHash);
+    expect((await GET(request("/api/mcp", `unflat_account_${"0".repeat(64)}`))).status).toBe(403);
+    const foreignOrigin = request("/api/mcp", first.accountToken);
+    foreignOrigin.headers.set("origin", "https://attacker.example");
+    expect((await GET(foreignOrigin)).status).toBe(403);
+    const transfer = vi.spyOn((runtime.deps as Dependencies).wallet, "transferUsdc");
+    expect((await grant(request("/api/owner/accounts", owner, { ...grantInput, accountId: second.accountId, requestId: "a7100000-0000-4000-8000-000000000071" }))).status).toBe(200);
+    for (const client of [one, two]) {
+      expect((await client.callTool({ name: "pay", arguments: { amountUsdcCents: 5, idempotencyKey: "shared-key" } })).isError).not.toBe(true);
+    }
+    expect(transfer.mock.calls[0][0].idempotencyKey).not.toBe(transfer.mock.calls[1][0].idempotencyKey);
+    vi.stubEnv("VERCEL", "1");
+    expect((await GET(request("/api/mcp", first.accountToken))).status).toBe(403);
+    expect((await accounts(request("/api/owner/accounts", owner))).status).toBe(403);
+  } finally { await Promise.all([enrollment.close(), one.close(), two.close()]); }
 });
 
 it("denial cannot be turned into approval by a replay", async () => {

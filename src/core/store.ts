@@ -1,6 +1,8 @@
 import type { GatewayStore } from "./ports";
+import { randomUUID } from "node:crypto";
 import type {
   Agent,
+  AgentAccount,
   Mandate,
   MandateRequest,
   MandateCommitmentOpening,
@@ -11,10 +13,27 @@ import type {
 import { IdempotencyError } from "./errors";
 
 export class MemoryGatewayStore implements GatewayStore {
+  private ownerId?: string;
+  private readonly accounts = new Map<string, AgentAccount>();
+  async ensureOwnerId() { return this.locked(() => this.ownerId ??= `owner:${randomUUID()}`); }
+  async reserveAccount(account: AgentAccount) {
+    return this.locked(() => {
+      if (account.name === "atlas" || [...this.accounts.values()].some(a => a.name === account.name)
+        || [...this.agents.values()].some(a => a.ensName.toLowerCase() === `${account.name}.agents.unflat.eth`)) return false;
+      this.accounts.set(account.id, structuredClone(account)); return true;
+    });
+  }
+  async getAccount(id: string) { return structuredClone(this.accounts.get(id)); }
+  async listAccounts() { return structuredClone([...this.accounts.values()]); }
+  async findAccountByTokenHash(hash: string) { return structuredClone([...this.accounts.values()].find(a => a.tokenHash === hash)); }
+  async finishAccount(id: string, status: "ready" | "failed") {
+    await this.locked(() => { const account = this.accounts.get(id); if (account) account.status = status; });
+  }
+  async listAgents() { return structuredClone([...this.agents.values()]); }
   private readonly approvals: MandateRequest[] = [];
   async requestApproval(request: MandateRequest) {
     return this.locked(() => {
-      const existing = this.approvals.find(r => r.principal === request.principal && ["pending", "approving"].includes(r.status));
+      const existing = this.approvals.find(r => r.id === request.id || (r.agentId === request.agentId && r.principal === request.principal && ["pending", "approving"].includes(r.status)));
       if (existing) return structuredClone(existing);
       this.approvals.push(structuredClone(request));
       return request;

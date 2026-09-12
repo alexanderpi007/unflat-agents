@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try { requireRole(request, "owner"); } catch { return Response.json({ error: "Forbidden", detail: "Owner token required; unavailable on Vercel." }, { status: 403 }); }
   try {
-  const pending = (await runtime.deps.store.listApprovals()).filter(r => r.status === "pending").slice(-20).map(({ principal: _, ...request }) => request);
+  const agents = await runtime.deps.store.listAgents();
+  const pending = (await runtime.deps.store.listApprovals()).filter(r => r.status === "pending").slice(-20).map(({ principal: _, ...request }) => ({
+    ...request, name: agents.find(agent => agent.id === request.agentId)?.ensName ?? request.agentId,
+  }));
   const vault = runtime.deps.vaultAllowlist.find(v => v.execution === "direct-morpho");
   return Response.json({ pending, moneyMode: runtime.health.adapters.privy.mode,
     recipient: runtime.deps.demoPaymentRecipient, vault: vault?.address }, { headers: { "Cache-Control": "no-store" } });

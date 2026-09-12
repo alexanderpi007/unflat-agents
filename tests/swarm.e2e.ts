@@ -64,6 +64,7 @@ test("owner token unlocks exact LIVE plan but cannot run without typed confirmat
   await page.getByRole("button", { name: "Sign out owner" }).click();
   await expect(live).toHaveCount(0);
   // Never click LIVE in browser tests. Real chain writes belong to the separate Arkiv test only.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("owner approvals require a separate typed confirmation for each request", async ({ page }) => {
@@ -91,6 +92,44 @@ test("owner approvals require a separate typed confirmation for each request", a
   await expect(page.getByText("Approved. The agent has two minutes to act.")).toBeVisible();
   expect(actions).toEqual([{ id, action: "approve", confirmation: "CONFIRM" }]);
   await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toBeDisabled();
+});
+
+test("owner lists separate funding addresses and confirms only the selected account", async ({ page }) => {
+  const accounts = ["nova", "luna"].map((name, index) => ({
+    id: `a7100000-0000-4000-8000-00000000000${index + 1}`, name: `${name}.agents.unflat.eth`,
+    fundingAddress: `0x${String(index + 1).repeat(40)}`, status: "ready",
+    balance: index === 0 ? { amountUsdcCents: 250 } : null,
+    mandate: { allowed: false, reason: "No mandate exists." }, ensExplorerUrl: `https://explorer.ens.dev/${name}.agents.unflat.eth`,
+  }));
+  const actions: unknown[] = [];
+  await page.route("**/api/owner/approvals", route => route.fulfill({ json: { pending: [], moneyMode: "mock" } }));
+  await page.route("**/api/owner/accounts", async route => {
+    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    if (route.request().method() === "POST") {
+      actions.push(route.request().postDataJSON());
+      return route.fulfill({ json: { status: "approved" } });
+    }
+    return route.fulfill({ json: { accounts, moneyMode: "mock", recipient: "recipient", vault: "vault" } });
+  });
+  await page.goto("http://localhost:3107");
+  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
+  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
+  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  const section = page.getByRole("region", { name: "Owner accounts" });
+  await expect(section).toContainText(accounts[0].fundingAddress);
+  await expect(section).toContainText(accounts[1].fundingAddress);
+  await expect(section).toContainText("$2.50 USDC");
+  await expect(section).toContainText("Balance unavailable");
+  const nova = section.getByRole("button", { name: "Grant budget to nova.agents.unflat.eth", exact: true });
+  const luna = section.getByRole("button", { name: "Grant budget to luna.agents.unflat.eth", exact: true });
+  await expect(nova).toBeDisabled(); await expect(luna).toBeDisabled();
+  await section.getByLabel("Type CONFIRM for nova.agents.unflat.eth", { exact: true }).fill("confirm");
+  await expect(nova).toBeDisabled();
+  await section.getByLabel("Type CONFIRM for nova.agents.unflat.eth", { exact: true }).fill("CONFIRM");
+  await expect(luna).toBeDisabled(); await nova.click();
+  await expect(section.getByRole("status")).toContainText("Budget granted for this account");
+  expect(actions).toEqual([{ accountId: accounts[0].id, requestId: expect.any(String), confirmation: "CONFIRM" }]);
+  await expect(nova).toBeDisabled(); await expect(luna).toBeDisabled();
 });
 
 test("native encryption request, dev deferred mode, fresh-context retrieval and no gateway reference leak", async ({ browser }) => {

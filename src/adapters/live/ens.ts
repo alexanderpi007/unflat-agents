@@ -1,4 +1,4 @@
-import { encodeFunctionData, keccak256, namehash, toHex, zeroAddress, type Hex } from "viem";
+import { encodeFunctionData, keccak256, namehash, toHex, zeroAddress, zeroHash, type Hex } from "viem";
 import { normalize, packetToBytes } from "viem/ens";
 import type { EnsPort } from "@/core/ports";
 import { EnsChain } from "./ens-chain";
@@ -47,6 +47,7 @@ export class EnsV2RegistrarAdapter implements EnsPort {
     await this.manager.write(resolver, resolverAbi, "multicall", [[
       encodeFunctionData({ abi: resolverAbi, functionName: "setAddr", args: [namehash(name), wallet] }),
       encodeFunctionData({ abi: resolverAbi, functionName: "setText", args: [namehash(name), "owner", ownerId] }),
+      encodeFunctionData({ abi: resolverAbi, functionName: "setText", args: [namehash(name), "mandate.commitment", zeroHash] }),
       encodeFunctionData({ abi: resolverAbi, functionName: "setText", args: [namehash(name), "gateway", "https://unflat-agents.vercel.app"] }),
     ]]);
     const resolved = await this.resolveIdentity(name);

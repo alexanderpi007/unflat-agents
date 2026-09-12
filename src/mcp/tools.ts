@@ -17,7 +17,7 @@ export function agentServer(call: (name: AgentTool, input: Record<string, unknow
       }
     });
   };
-  register("get_account", "Read account name, wallet, USDC balance and fresh mandate decision. Does not require active permission.", {}, true);
+  register("get_account", "Enrollment token + name: create a NEW wallet and ENS subname; returns accountToken ONCE and fundingAddress. Save token privately and reconnect using it. Account token: read ONLY its own account, balance and mandate; no active mandate needed. Existing names cannot be claimed.", { name: z.string().min(1).max(36).optional().describe("New single ENS label for enrollment, e.g. nova. Omit when using your account token.") });
   register("request_mandate", "Ask the owner for a two-minute, 1.20 USDC cap mandate. Returns pending; cannot grant permission.", { purpose: z.string().min(1).max(160) });
   register("pay", "Transfer exactly 0.05 USDC to the owner-configured recipient, only with owner approval and a live gateway mandate.", { amountUsdcCents: z.literal(5), idempotencyKey: key });
   register("strategize", "Run dry then fee-waived AIMorgan advice under mandate. Require price validation before any signing.", { idempotencyKey: key });

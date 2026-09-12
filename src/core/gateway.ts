@@ -35,13 +35,13 @@ export class SigningGateway {
     return admin.setup();
   }
 
-  async getOrCreateAgent(agentId: string, displayName: string): Promise<{ agent: Agent; reused: boolean }> {
+  async getOrCreateAgent(agentId: string, displayName: string, ownerId?: string): Promise<{ agent: Agent; reused: boolean }> {
     const existing = await this.deps.store.getAgent(agentId);
     if (existing) return { agent: await this.ensureAgentIdentity(agentId), reused: true };
-    return { agent: await this.provisionAgent(agentId, displayName), reused: false };
+    return { agent: await this.provisionAgent(agentId, displayName, ownerId), reused: false };
   }
 
-  private async provisionAgent(agentId: string, displayName: string): Promise<Agent> {
+  private async provisionAgent(agentId: string, displayName: string, ownerId = "owner:demo"): Promise<Agent> {
     const label = displayName
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
@@ -52,6 +52,7 @@ export class SigningGateway {
     const wallet = await this.deps.wallet.createWallet();
     const agent: Agent = {
       id: agentId,
+      ownerId,
       displayName,
       ensName: `${label}.agents.unflat.eth`,
       walletId: wallet.walletId,
@@ -65,11 +66,11 @@ export class SigningGateway {
     return registered;
   }
 
-  async ensureAgentIdentity(agentId: string, ownerId = "owner:demo"): Promise<Agent> {
+  async ensureAgentIdentity(agentId: string, ownerId?: string): Promise<Agent> {
     const agent = await this.deps.store.getAgent(agentId);
     if (!agent) throw new Error("Agent not found.");
     const label = agent.displayName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "").slice(0, 36);
-    const identity = await this.deps.ens.createIdentity(label, agent.walletAddress, ownerId);
+    const identity = await this.deps.ens.createIdentity(label, agent.walletAddress, ownerId ?? agent.ownerId ?? "owner:demo");
     const updated = { ...agent, ensName: identity.name };
     if (/^0x[0-9a-f]{64}$/i.test(identity.reference)) {
       updated.ensRegistrationTransaction = identity.reference;

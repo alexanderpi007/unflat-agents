@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentAccount,
   ArkivMandateEntity,
   ArkivMandatePublication,
   ArkivMandateQuery,
@@ -28,6 +29,13 @@ export interface Clock {
 }
 
 export interface GatewayStore {
+  ensureOwnerId(): Promise<string>;
+  reserveAccount(account: AgentAccount): Promise<boolean>;
+  getAccount(accountId: string): Promise<AgentAccount | undefined>;
+  listAccounts(): Promise<AgentAccount[]>;
+  findAccountByTokenHash(tokenHash: string): Promise<AgentAccount | undefined>;
+  finishAccount(accountId: string, status: "ready" | "failed"): Promise<void>;
+  listAgents(): Promise<Agent[]>;
   requestApproval(request: MandateRequest): Promise<MandateRequest>;
   listApprovals(): Promise<MandateRequest[]>;
   transitionApproval(id: string, from: MandateRequest["status"], to: MandateRequest["status"], mandateId?: string): Promise<boolean>;

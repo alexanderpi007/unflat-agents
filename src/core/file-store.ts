@@ -5,6 +5,7 @@ import { IdempotencyError } from "./errors";
 import type { GatewayStore } from "./ports";
 import type {
   Agent,
+  AgentAccount,
   Mandate,
   MandateRequest,
   MandateCommitmentOpening,
@@ -14,6 +15,8 @@ import type {
 } from "./types";
 
 interface StoreState {
+  ownerId?: string;
+  accounts: Record<string, AgentAccount>;
   approvals: MandateRequest[];
   agents: Record<string, Agent>;
   mandates: Record<string, Mandate>;
@@ -24,6 +27,7 @@ interface StoreState {
 }
 
 const emptyState = (): StoreState => ({
+  accounts: {},
   approvals: [],
   agents: {},
   mandates: {},
@@ -38,9 +42,29 @@ const shared = globalThis as typeof globalThis & { unflatStoreLocks?: Map<string
 const locks = shared.unflatStoreLocks ??= new Map();
 
 export class FileGatewayStore implements GatewayStore {
+  async ensureOwnerId() {
+    return this.mutate(state => state.ownerId ??= `owner:${randomUUID()}`);
+  }
+  async reserveAccount(account: AgentAccount) {
+    return this.mutate(state => {
+      if (account.name === "atlas" || Object.values(state.accounts).some(a => a.name === account.name)
+        || Object.values(state.agents).some(a => a.ensName.toLowerCase() === `${account.name}.agents.unflat.eth`)) return false;
+      state.accounts[account.id] = account;
+      return true;
+    });
+  }
+  async getAccount(id: string) { return this.inspect(state => state.accounts[id]); }
+  async listAccounts() { return this.inspect(state => Object.values(state.accounts)); }
+  async findAccountByTokenHash(hash: string) {
+    return this.inspect(state => Object.values(state.accounts).find(a => a.tokenHash === hash));
+  }
+  async finishAccount(id: string, status: "ready" | "failed") {
+    await this.mutate(state => { if (state.accounts[id]) state.accounts[id].status = status; });
+  }
+  async listAgents() { return this.inspect(state => Object.values(state.agents)); }
   async requestApproval(request: MandateRequest) {
     return this.mutate(state => {
-      const existing = state.approvals.find(r => r.principal === request.principal && ["pending", "approving"].includes(r.status));
+      const existing = state.approvals.find(r => r.id === request.id || (r.agentId === request.agentId && r.principal === request.principal && ["pending", "approving"].includes(r.status)));
       if (existing) return existing;
       state.approvals.push(request);
       return request;

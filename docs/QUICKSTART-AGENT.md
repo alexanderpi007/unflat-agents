@@ -23,12 +23,22 @@ If using `npm run dev`, the tunnel hostname must also appear in `next.config.ts`
 
 1. Open `https://YOUR-TUNNEL.ngrok-free.app`, then **Owner mode**.
 2. Enter **OWNER_TOKEN**, then **Unlock Owner mode**. Login remains in that tab’s `sessionStorage` across reloads; sign out or close the tab when finished. It is sent only as an Authorization header to same-origin owner/LIVE APIs, never a URL or MCP tool argument.
-3. In **Owner approvals**, wait for the agent’s pending request (refreshes every five seconds).
+3. In **All accounts**, find the enrolled name and its funding address. Fund only a **ready**, live account with Base USDC and ETH for gas from your own wallet. Unknown balances say unavailable, not zero. Either grant that account a budget directly, or wait for its named pending request in **Owner approvals** (refreshes every five seconds).
 4. Review recipient/vault under **Approval details**, the actual mock/live mode, two-minute expiry, $1.20 total cap, and $1.00 per-action cap. A pay is fixed at 0.05 USDC; save is fixed at 1.00 USDC. The agent may repeat actions within the $1.20 cap, plus gas—not merely one 1.05 USDC sequence.
 5. Type **CONFIRM** for this request, then **Approve (2 minutes, $1.20 cap)**. The two minutes begin when granted, not when requested. **Deny** grants nothing and does not need CONFIRM. Neither request nor denial signs a Base transaction.
 6. The separate **Run LIVE (Base mainnet)** button is the scripted video run, with its own typed CONFIRM and 1.05 USDC + gas plan. Do not click it for the agent walkthrough: the agent invokes its own actions after approval.
 
 The owner token grants administrative authority; typed CONFIRM records explicit consent, not a second authentication factor. Anyone holding that token can act as owner. Closing the UI does not revoke an already approved mandate: it naturally expires. Agents have no `grant_mandate` tool and cannot choose another wallet, recipient, vault, cap, or expiry.
+
+## Enroll once, then use your account token
+
+`MCP_AGENT_TOKEN` is **enrollment-only**: it can create accounts, not read existing accounts or request/spend a budget. Protect it: creating live accounts creates Privy wallets and pays Sepolia gas for ENS registration. It is not a spending approval.
+
+Connect with that token and call `get_account {"name":"nova"}`. Names are normalized to lowercase, 1–36 characters, starting with a letter; digits and internal hyphens are allowed. This creates a new wallet and `nova.agents.unflat.eth`. An existing name (including Atlas) is refused before wallet creation.
+
+Save the returned `accountToken` privately **once**, then reconnect using it as the bearer token. Set it in the agent environment as `UNFLAT_ACCOUNT_TOKEN`. All subsequent tools—including `get_account {}`, requests and statements—require this account token. It cannot select or create another account. The enrollment response also returns `fundingAddress`, `ownerId`, provisioning status and ENS registration transaction. The gateway stores only the credential hash; it never returns the token again. If the response is lost, or status is not `ready`, stop and ask the owner to inspect the account. There is no automatic token recovery, wallet replacement or provisioning retry; do not fund an incomplete account.
+
+The human owner controls every account through `OWNER_TOKEN`. A persistent public owner ID goes in the ENS `owner` record—not the secret or its hash. ENS also records the wallet address, gateway URL and current mandate commitment (zero hash until the first grant). Parent/deployer and gateway ENS roles remain unchanged.
 
 ## Agent laptop — Claude Code
 
@@ -41,6 +51,8 @@ claude mcp add --transport http --scope user unflat https://YOUR-TUNNEL.ngrok-fr
 ```
 
 Claude Code supports environment expansion in MCP headers; single quotes keep the token value out of the stored command/config. Start Claude with that variable available, open `/mcp`, and check that unflat exposes six tools. See [Claude Code’s MCP documentation](https://code.claude.com/docs/en/mcp). Allow up to three minutes for a tool involving chain confirmation; do not automatically retry a timeout with a new action key.
+
+After enrollment, remove the enrollment connection (`claude mcp remove unflat --scope user`) and add it again with the same command, replacing `${MCP_AGENT_TOKEN}` with `${UNFLAT_ACCOUNT_TOKEN}`. Reconnect/restart the MCP connection before the walkthrough below. Never place the literal token in a shared command or screenshot.
 
 ## Agent laptop — Hermes
 
@@ -57,7 +69,7 @@ mcp_servers:
     supports_parallel_tool_calls: false
 ```
 
-Put only the agent token in the agent’s private environment/`~/.hermes/.env`, then restart Hermes. The `url`, `headers`, and environment-variable substitution follow [Hermes’ MCP configuration reference](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference). Do not give either agent local filesystem access to the gateway’s `.env` or signing keys.
+Use the enrollment header above for the single enrollment call. Then replace `${MCP_AGENT_TOKEN}` with `${UNFLAT_ACCOUNT_TOKEN}` in the config, put that account token in the agent’s private environment/`~/.hermes/.env`, and restart Hermes. The `url`, `headers`, and environment-variable substitution follow [Hermes’ MCP configuration reference](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference). Do not give either agent local filesystem access to the gateway’s `.env` or signing keys.
 
 ## Six-line agent walkthrough
 
@@ -72,10 +84,10 @@ Wait until permission expires; pay {"amountUsdcCents":5,"idempotencyKey":"take-0
 
 `statement {}` reads this agent account’s current-run decisions even after expiry. `strategize` is also available explicitly; `save` invokes it automatically. Use new keys for genuinely new actions, reuse a key only for the identical uncertain request, and inspect the statement before retrying. Approval/signing may consume some of the two-minute window: expiry always wins.
 
-One `MCP_AGENT_TOKEN` represents one agent role/account; anyone sharing it shares that identity. This account reuses the persistent Privy wallet but has a separate mandate from the scripted dashboard run, so it cannot borrow the demo’s approval. Requests and approval state persist in the gateway file store; Arkiv is queried afresh for authorization, never a local authorization cache.
+Each account has its own wallet, ENS name, credential and mandate. Atlas and its existing wallet remain unchanged. Requests and token hashes persist in the gateway file store; Arkiv is queried afresh for authorization, never a local authorization cache.
 
 ## Stdio and teardown
 
-`npm run mcp` remains available. Configure stdio clients to launch `npm run --silent mcp` from the repo directory so npm’s lifecycle banner does not pollute protocol stdout. Provide `MCP_AGENT_TOKEN` and `UNFLAT_GATEWAY_URL` in that process environment; the bridge forwards the same six tools to authenticated HTTP, with no signer or owner token. It does not read the gateway’s `.env` for the remote agent.
+`npm run mcp` remains available. Configure stdio clients to launch `npm run --silent mcp` from the repo directory so npm’s lifecycle banner does not pollute protocol stdout. Provide `UNFLAT_GATEWAY_URL` and initially `MCP_AGENT_TOKEN`; after enrollment restart it with `UNFLAT_ACCOUNT_TOKEN` (which takes precedence). The bridge forwards the same six tools to authenticated HTTP, with no signer or owner token. It does not read the gateway’s `.env` for the remote agent.
 
-After the demonstration, stop ngrok, sign out the owner, remove the agent’s client configuration, and rotate both gateway tokens before the next shared session. Restart Next after `.env` changes. Tokens must not be deployed to Vercel; the backend denies owner/MCP access there even if they are present. This is a short-lived hackathon integration, not a production multi-user authentication service.
+After the demonstration, stop ngrok, sign out the owner and remove the agent’s client configuration. Rotating the enrollment token prevents future enrollment with that credential; it does **not** revoke existing account tokens. Account tokens persist across server restarts; there is no token-revocation UI yet. Spending mandates expire independently. Restart Next after `.env` changes or this store-schema upgrade. Tokens must not be deployed to Vercel; the backend denies owner/MCP access there even if they are present. This is a short-lived hackathon integration, not a production multi-user authentication service.

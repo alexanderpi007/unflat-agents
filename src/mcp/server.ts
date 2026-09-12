@@ -3,8 +3,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { agentServer } from "./tools";
 
-const token = process.env.MCP_AGENT_TOKEN;
-if (!token || token.length < 32) throw new Error("MCP_AGENT_TOKEN is required (at least 32 characters).");
+const token = process.env.UNFLAT_ACCOUNT_TOKEN ?? process.env.MCP_AGENT_TOKEN;
+if (!token || token.length < 32) throw new Error("UNFLAT_ACCOUNT_TOKEN is required for account operations; MCP_AGENT_TOKEN is enrollment-only.");
 const url = new URL("/api/mcp", process.env.UNFLAT_GATEWAY_URL ?? "http://localhost:3000");
 if (url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
   throw new Error("Remote gateways require HTTPS.");

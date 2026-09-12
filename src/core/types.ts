@@ -3,6 +3,15 @@ export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | 
 export type HexAddress = `0x${string}`;
 export type HexHash = `0x${string}`;
 
+export interface AgentAccount {
+  id: string;
+  name: string;
+  ownerId: string;
+  tokenHash: string;
+  status: "provisioning" | "ready" | "failed";
+  createdAt: string;
+}
+
 export interface MandateRequest {
   id: string;
   agentId: string;
@@ -15,6 +24,7 @@ export interface MandateRequest {
 
 export interface Agent {
   id: string;
+  ownerId?: string;
   displayName: string;
   ensName: string;
   ensRegistrationTransaction?: string;
