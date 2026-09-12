@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { isAddress, zeroAddress } from "viem";
 import { IdempotencyError, RefusalError } from "./errors";
 import { MandateService } from "./mandates";
 import { createMandateCommitment } from "./mandate-commitment";
@@ -35,13 +36,13 @@ export class SigningGateway {
     return admin.setup();
   }
 
-  async getOrCreateAgent(agentId: string, displayName: string, ownerId?: string): Promise<{ agent: Agent; reused: boolean }> {
+  async getOrCreateAgent(agentId: string, displayName: string, ownerId?: string, ownerEmail?: string): Promise<{ agent: Agent; reused: boolean }> {
     const existing = await this.deps.store.getAgent(agentId);
     if (existing) return { agent: await this.ensureAgentIdentity(agentId), reused: true };
-    return { agent: await this.provisionAgent(agentId, displayName, ownerId), reused: false };
+    return { agent: await this.provisionAgent(agentId, displayName, ownerId, ownerEmail), reused: false };
   }
 
-  private async provisionAgent(agentId: string, displayName: string, ownerId = "owner:demo"): Promise<Agent> {
+  private async provisionAgent(agentId: string, displayName: string, ownerId = "owner:demo", ownerEmail?: string): Promise<Agent> {
     const label = displayName
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
@@ -49,10 +50,13 @@ export class SigningGateway {
       .slice(0, 36);
     if (!label) throw new Error("Agent name must contain a letter or number.");
 
-    const wallet = await this.deps.wallet.createWallet();
+    const wallet: { walletId: string; address: Agent["walletAddress"]; ownership?: Agent["ownership"] } = ownerEmail
+      ? await this.deps.wallet.createOwnerWallet({ ownerEmail, accountId: agentId, vaults: this.deps.vaultAllowlist })
+      : await this.deps.wallet.createWallet();
     const agent: Agent = {
       id: agentId,
       ownerId,
+      ...(wallet.ownership ? { ownership: wallet.ownership } : {}),
       displayName,
       ensName: `${label}.agents.unflat.eth`,
       walletId: wallet.walletId,
@@ -97,6 +101,40 @@ export class SigningGateway {
     });
     await this.requireDeclaredPriceMatch(input.agentId, quote, dryStrategy.priceValidation);
     return { mode: "x402" as const, dryStrategy, quote, quoteValidation: dryStrategy.priceValidation! };
+  }
+
+  async ownerRecovery(input: { agentId: string; action: "earn.recall" | "owner.transfer"; confirmation: string;
+    idempotencyKey: string; sharesRaw?: string; vaultAddress?: Agent["walletAddress"]; recipient?: Agent["walletAddress"]; amountUsdcCents?: number }) {
+    if (input.confirmation !== "CONFIRM") throw new Error("REFUSED — owner must type CONFIRM.");
+    return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
+      const agent = await this.requireAgent(input.agentId);
+      if (agent.ownership?.kind !== "privy-user") throw new Error("REFUSED — recovery delegation is only configured for owner-owned accounts. Atlas remains legacy.");
+      const amount = input.action === "owner.transfer" ? input.amountUsdcCents : 0;
+      if (amount === undefined || !Number.isSafeInteger(amount) || amount < 0 || (input.action === "owner.transfer" && amount === 0)) throw new Error("REFUSED — invalid recovery amount.");
+      const initial = await this.mandates.decide(input.agentId, input.action, amount);
+      if (!initial.allowed) return this.refuse(input.agentId, input.action, amount, initial);
+      const validation = await this.deps.aiMorgan.strategize({ agentAddress: agent.walletAddress, totalUsdcCents: amount || 100, dry: true });
+      await this.requirePriceValidation(input.agentId, input.action, validation.priceValidation);
+      if (input.action === "owner.transfer") {
+        if (!input.recipient || !isAddress(input.recipient) || input.recipient === zeroAddress || input.recipient.toLowerCase() === agent.walletAddress.toLowerCase()) throw new Error("REFUSED — enter the owner's external Base address.");
+        const check = await this.deps.preflight.verifyUsdcTransfer({ walletAddress: agent.walletAddress, recipient: input.recipient, amountUsdcCents: amount });
+        if (!check.allPassed) return this.refuse(input.agentId, input.action, amount, { ...initial, allowed: false, reason: `REFUSED — ${check.reason}` });
+        const decision = await this.reserveMandate(input.agentId, input.action, amount);
+        if (!decision.allowed) return this.refuse(input.agentId, input.action, amount, decision);
+        const result = await this.deps.wallet.transferUsdc({ walletId: agent.walletId, recipient: input.recipient, amountUsdcCents: amount, idempotencyKey: input.idempotencyKey });
+        await this.event(input.agentId, input.action, "completed", amount, `${decision.reason} Owner-confirmed transfer to ${input.recipient}. ${result.source === "mock" ? "MOCK: no broadcast." : result.explorerUrl}`, result.transactionHash);
+        return result;
+      }
+      const vault = this.deps.vaultAllowlist.find(v => v.execution === "direct-morpho" && v.address.toLowerCase() === input.vaultAddress?.toLowerCase());
+      if (!vault || !input.sharesRaw || !/^[1-9][0-9]{0,76}$/.test(input.sharesRaw)) throw new Error("REFUSED — specify positive raw shares and an allowlisted direct vault.");
+      const check = await this.deps.preflight.verifyRecall({ walletAddress: agent.walletAddress, vaultAddress: vault.address, sharesRaw: input.sharesRaw });
+      if (!check.allPassed) return this.refuse(input.agentId, input.action, 0, { ...initial, allowed: false, reason: `REFUSED — ${check.reason}` });
+      const decision = await this.reserveMandate(input.agentId, input.action, 0);
+      if (!decision.allowed) return this.refuse(input.agentId, input.action, 0, decision);
+      const result = await this.deps.wallet.redeemDirectVault({ walletId: agent.walletId, walletAddress: agent.walletAddress, vaultAddress: vault.address, sharesRaw: input.sharesRaw, idempotencyKey: input.idempotencyKey });
+      await this.event(input.agentId, input.action, "completed", 0, `${decision.reason} Owner recalled ${result.sharesRedeemedRaw} raw vault shares into the same wallet; received ${result.assetsReceivedRaw} raw USDC units. ${result.explorerUrl ?? "MOCK: no broadcast."}`, result.transactionHash);
+      return result;
+    });
   }
 
   async usdcBalance(agentId: string) {

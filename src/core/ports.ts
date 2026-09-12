@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentAccount,
+  OwnerWalletIdentity,
   ArkivMandateEntity,
   ArkivMandatePublication,
   ArkivMandateQuery,
@@ -60,6 +61,8 @@ export interface GatewayStore {
 
 export interface WalletPort {
   createWallet(): Promise<{ walletId: string; address: HexAddress }>;
+  createOwnerWallet(input: { ownerEmail: string; accountId: string; vaults: VaultConfig[] }): Promise<{ walletId: string; address: HexAddress; ownership: OwnerWalletIdentity }>;
+  redeemDirectVault(input: { walletId: string; walletAddress: HexAddress; vaultAddress: HexAddress; sharesRaw: string; idempotencyKey: string }): Promise<{ transactionHash: DirectVaultTransaction["transactionHash"]; explorerUrl?: string; assetsReceivedRaw: string; sharesRedeemedRaw: string }>;
   verifyPrivyEarnVault(vault: VaultConfig): Promise<void>;
   signX402(walletId: string, quote: X402Quote): Promise<SignedPayment>;
   transferUsdc(input: {
@@ -123,6 +126,7 @@ export interface AiMorganPort {
 }
 
 export interface PreflightPort {
+  verifyRecall(input: { walletAddress: HexAddress; vaultAddress: HexAddress; sharesRaw: string }): Promise<{ allPassed: boolean; reason: string; assetsRaw?: string }>;
   getUsdcBalance(walletAddress: HexAddress): Promise<UsdcBalance>;
   verifyUsdcTransfer(input: {
     walletAddress: HexAddress;

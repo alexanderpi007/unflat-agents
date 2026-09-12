@@ -132,6 +132,45 @@ test("owner lists separate funding addresses and confirms only the selected acco
   await expect(nova).toBeDisabled(); await expect(luna).toBeDisabled();
 });
 
+test("owner-owned recovery is per account, clearly labelled and separately CONFIRM gated", async ({ page }) => {
+  const id = "a7100000-0000-4000-8000-000000000033";
+  const vault = `0x${"2".repeat(40)}`;
+  const actions: unknown[] = [];
+  await page.route("**/api/owner/approvals", route => route.fulfill({ json: { pending: [], moneyMode: "mock" } }));
+  await page.route("**/api/owner/accounts", route => route.fulfill({ json: { moneyMode: "mock", vault, accounts: [{
+    id, name: "nova.agents.unflat.eth", ownerEmail: "owner@example.com", ownership: "privy-user", ownerPortalUrl: "/owner-wallet",
+    fundingAddress: `0x${"3".repeat(40)}`, balance: null, status: "ready", mandate: { allowed: false, reason: "Expired" }, ensExplorerUrl: "https://explorer.ens.dev",
+  }] } }));
+  await page.route("**/api/owner/recovery", async route => {
+    expect(route.request().headers().authorization).toBe("Bearer test-owner-token-not-a-secret-123456789");
+    actions.push(route.request().postDataJSON());
+    return route.fulfill({ json: { transactionHash: `0x${"6".repeat(64)}`, sharesRedeemedRaw: "123", assetsReceivedRaw: "1000000" } });
+  });
+  await page.goto("http://localhost:3107");
+  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
+  await page.getByLabel("Owner token", { exact: true }).fill("test-owner-token-not-a-secret-123456789");
+  await page.getByRole("button", { name: "Unlock Owner mode" }).click();
+  const section = page.getByRole("region", { name: "Owner accounts" });
+  await expect(section).toContainText("Owner-owned · owner@example.com");
+  await expect(section.getByRole("link", { name: "Log in on Privy to withdraw or revoke ↗" })).toHaveAttribute("href", "/owner-wallet");
+  await section.getByText("Owner recovery through the gateway", { exact: true }).click();
+  const execute = section.getByRole("button", { name: "Execute owner recovery" });
+  await expect(execute).toBeDisabled();
+  await section.getByLabel("Raw vault shares (from deposit receipt)").fill("123");
+  await section.getByLabel("Type CONFIRM for this recovery").fill("confirm");
+  await expect(execute).toBeDisabled();
+  await section.getByLabel("Type CONFIRM for this recovery").fill("CONFIRM");
+  await section.getByLabel("Recovery action").selectOption("owner.transfer");
+  await expect(execute).toBeDisabled();
+  await section.getByLabel("Recovery action").selectOption("earn.recall");
+  await section.getByLabel("Type CONFIRM for this recovery").fill("CONFIRM");
+  await execute.click();
+  await expect(section).toContainText("Recalled 123 raw shares");
+  await expect(execute).toBeDisabled();
+  expect(actions).toEqual([{ accountId: id, action: "earn.recall", sharesRaw: "123", vaultAddress: vault, confirmation: "CONFIRM", requestId: expect.any(String) }]);
+  await expect(section.getByRole("button", { name: "Grant budget to nova.agents.unflat.eth" })).toBeDisabled();
+});
+
 test("native encryption request, dev deferred mode, fresh-context retrieval and no gateway reference leak", async ({ browser }) => {
   let stored: { data: number[]; options: { encrypt: boolean; deferred: boolean } } | undefined;
   const gatewayRequests: string[] = [];

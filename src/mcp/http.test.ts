@@ -8,6 +8,7 @@ import { runtime } from "@/server/runtime";
 import { POST, GET } from "@/app/api/mcp/route";
 import { POST as approve, GET as approvals } from "@/app/api/owner/approvals/route";
 import { GET as accounts, POST as grant } from "@/app/api/owner/accounts/route";
+import { POST as recover } from "@/app/api/owner/recovery/route";
 
 vi.mock("@/server/runtime", async importOriginal => {
   const actual = await importOriginal<typeof import("@/server/runtime")>();
@@ -44,11 +45,11 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
   const atlas = await runtime.deps.store.getAgent(persistentAgentId);
   const enrollment = await connect(agent);
   expect((await enrollment.callTool({ name: "statement", arguments: {} })).isError).toBe(true);
-  const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "Nova" } }));
+  const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "Nova", owner_email: "owner@example.com" } }));
   expect(created).toMatchObject({ name: "nova.agents.unflat.eth", status: "ready" });
   expect(created.accountToken).toMatch(/^unflat_account_[a-f0-9]{64}$/);
   expect(created.fundingAddress).not.toBe(atlas!.walletAddress);
-  const duplicate = await enrollment.callTool({ name: "get_account", arguments: { name: "nova" } });
+  const duplicate = await enrollment.callTool({ name: "get_account", arguments: { name: "nova", owner_email: "owner@example.com" } });
   expect(duplicate.isError).toBe(true);
   expect(JSON.stringify(duplicate)).not.toContain(created.accountToken);
   expect((await enrollment.callTool({ name: "get_account", arguments: { name: "atlas" } })).isError).toBe(true);
@@ -101,8 +102,8 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
 
 it("two scoped clients cannot read, spend, save or grant for each other; owner sees both balances", async () => {
   const enrollment = await connect(agent);
-  const first = body(await enrollment.callTool({ name: "get_account", arguments: { name: "comet" } }));
-  const second = body(await enrollment.callTool({ name: "get_account", arguments: { name: "luna" } }));
+  const first = body(await enrollment.callTool({ name: "get_account", arguments: { name: "comet", owner_email: "owner@example.com" } }));
+  const second = body(await enrollment.callTool({ name: "get_account", arguments: { name: "luna", owner_email: "owner@example.com" } }));
   const one = await connect(first.accountToken), two = await connect(second.accountToken);
   try {
     expect(first.fundingAddress).not.toBe(second.fundingAddress);
@@ -154,4 +155,49 @@ it("denial cannot be turned into approval by a replay", async () => {
   await runtime.deps.store.requestApproval(row);
   expect((await approve(request("/api/owner/approvals", owner, { id: row.id, action: "deny" }))).status).toBe(200);
   expect((await approve(request("/api/owner/approvals", owner, { id: row.id, action: "approve", confirmation: "CONFIRM" }))).status).toBe(400);
+});
+
+it("owner-only recall and transfer require CONFIRM, fresh mandate and price validation; agents cannot invoke them", async () => {
+  const enrollment = await connect(agent);
+  const created = body(await enrollment.callTool({ name: "get_account", arguments: { name: "owner-recovery", owner_email: "owner@example.com" } }));
+  const client = await connect(created.accountToken);
+  const input = { accountId: created.accountId, action: "earn.recall", confirmation: "CONFIRM",
+    requestId: "a7100000-0000-4000-8000-000000000080", sharesRaw: "1000000000000000000",
+    vaultAddress: runtime.deps.vaultAllowlist[0].address };
+  try {
+    for (const token of [agent, created.accountToken]) {
+      expect((await recover(request("/api/owner/recovery", token, input))).status).toBe(403);
+    }
+    expect((await client.callTool({ name: "earn.recall", arguments: {} })).isError).toBe(true);
+    expect((await client.callTool({ name: "owner.transfer", arguments: {} })).isError).toBe(true);
+    const wallet = (runtime.deps as Dependencies).wallet;
+    const redeem = vi.spyOn(wallet, "redeemDirectVault");
+    const transfer = vi.spyOn(wallet, "transferUsdc");
+    expect((await recover(request("/api/owner/recovery", owner, { ...input, confirmation: "" }))).status).toBe(400);
+    expect((await recover(request("/api/owner/recovery", owner, input))).status).toBe(400);
+    expect(redeem).not.toHaveBeenCalled();
+    expect((await grant(request("/api/owner/accounts", owner, { accountId: created.accountId,
+      requestId: "a7100000-0000-4000-8000-000000000081", confirmation: "CONFIRM" }))).status).toBe(200);
+    const success = await recover(request("/api/owner/recovery", owner, { ...input, requestId: "a7100000-0000-4000-8000-000000000082" }));
+    expect(success.status).toBe(200);
+    expect(await success.json()).toMatchObject({ assetsReceivedRaw: "1000000", sharesRedeemedRaw: input.sharesRaw });
+    expect(redeem).toHaveBeenCalledWith(expect.objectContaining({ walletAddress: created.fundingAddress }));
+    const send = { accountId: created.accountId, action: "owner.transfer", amountUsdcCents: 100,
+      recipient: `0x${"9".repeat(40)}`, confirmation: "CONFIRM", requestId: "a7100000-0000-4000-8000-000000000083" };
+    expect((await recover(request("/api/owner/recovery", owner, send))).status).toBe(200);
+    expect((await recover(request("/api/owner/recovery", owner, send))).status).toBe(200);
+    expect(transfer).toHaveBeenCalledTimes(1);
+    expect((await runtime.deps.store.getMandate(created.accountId))!.spentUsdcCents).toBe(100);
+    const events = await runtime.deps.store.listEvents(created.accountId);
+    expect(events.some(e => e.action === "earn.recall" && e.status === "completed")).toBe(true);
+    expect(events.some(e => e.action === "owner.transfer" && e.status === "completed")).toBe(true);
+    vi.spyOn(runtime.deps.aiMorgan, "strategize").mockResolvedValueOnce({ id: "bad-price", summary: "", idleFundsUsdcCents: 0, advisoryVaultIds: [], priceValidation: { allPassed: false, quotedUsdcCents: 0, checks: [{ name: "test-price", passed: false, reason: "Test refusal" }] } });
+    expect((await recover(request("/api/owner/recovery", owner, { ...input, requestId: "a7100000-0000-4000-8000-000000000084" }))).status).toBe(400);
+    expect(redeem).toHaveBeenCalledTimes(1);
+    (runtime.deps.clock as FakeClock).advance(120_001);
+    expect((await recover(request("/api/owner/recovery", owner, { ...input, requestId: "a7100000-0000-4000-8000-000000000085" }))).status).toBe(400);
+    expect(redeem).toHaveBeenCalledTimes(1);
+    vi.stubEnv("VERCEL", "1");
+    expect((await recover(request("/api/owner/recovery", owner, input))).status).toBe(403);
+  } finally { await Promise.all([enrollment.close(), client.close()]); }
 });

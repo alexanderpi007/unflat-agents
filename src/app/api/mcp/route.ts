@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const service = new AgentService(configured, accountId);
   const server = agentServer((name, input) => {
     switch (name) {
-      case "get_account": return service.getAccount(input.name as string | undefined);
+      case "get_account": return service.getAccount(input.name as string | undefined, input.owner_email as string | undefined);
       case "request_mandate": return service.requestMandate(input.purpose as string);
       case "pay": return service.pay(input.idempotencyKey as string);
       case "strategize": return service.strategize(input.idempotencyKey as string);

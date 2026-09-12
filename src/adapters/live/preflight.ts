@@ -33,6 +33,20 @@ export class BaseEarnPreflightAdapter implements PreflightPort {
     this.client = createPublicClient({ chain: base, transport: http(rpcUrl, { retryCount: 3, retryDelay: 1000 }) });
   }
 
+  async verifyRecall(input: Parameters<PreflightPort["verifyRecall"]>[0]) {
+    try {
+      const shares = BigInt(input.sharesRaw);
+      const [asset, balance, simulation, gas] = await Promise.all([
+        this.client.readContract({ address: input.vaultAddress, abi: erc4626Abi, functionName: "asset" }),
+        this.client.readContract({ address: input.vaultAddress, abi: erc20Abi, functionName: "balanceOf", args: [input.walletAddress] }),
+        this.client.simulateContract({ address: input.vaultAddress, abi: erc4626Abi, functionName: "redeem", args: [shares, input.walletAddress, input.walletAddress], account: input.walletAddress }),
+        this.client.estimateContractGas({ address: input.vaultAddress, abi: erc4626Abi, functionName: "redeem", args: [shares, input.walletAddress, input.walletAddress], account: input.walletAddress }),
+      ]);
+      const allPassed = asset.toLowerCase() === usdc.toLowerCase() && shares > 0n && balance >= shares && simulation.result > 0n && gas > 0n;
+      return { allPassed, reason: allPassed ? "Canonical Base USDC, sufficient shares, redeem eth_call and gas checks passed." : "Recall asset, shares or simulation checks failed.", assetsRaw: simulation.result.toString() };
+    } catch { return { allPassed: false, reason: "Recall preflight failed. Inspect vault liquidity, shares and gas balance; nothing was signed." }; }
+  }
+
   async getUsdcBalance(walletAddress: Parameters<PreflightPort["getUsdcBalance"]>[0]) {
     const rawAmount = await this.client.readContract({
       address: usdc,

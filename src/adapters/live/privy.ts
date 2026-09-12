@@ -15,6 +15,7 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import { confirmedShares } from "./confirmed-shares";
+import { pregenerateOwnerWallet } from "./owner-wallet";
 import type { WalletPort } from "@/core/ports";
 import type { HexAddress, HexHash, X402Quote } from "@/core/types";
 
@@ -32,6 +33,7 @@ export class PrivyWalletAdapter implements WalletPort {
     authorizationPrivateKey: string,
     private readonly policyId: string,
     baseRpcUrl: string,
+    private readonly sessionSignerId?: string,
   ) {
     this.client = new PrivyClient({ appId, appSecret });
     this.baseClient = createPublicClient({ chain: base, transport: http(baseRpcUrl, { retryCount: 3, retryDelay: 1000 }) });
@@ -48,6 +50,35 @@ export class PrivyWalletAdapter implements WalletPort {
       idempotency_key: randomUUID(),
     });
     return { walletId: wallet.id, address: wallet.address as HexAddress };
+  }
+
+  async createOwnerWallet(input: Parameters<WalletPort["createOwnerWallet"]>[0]) {
+    return pregenerateOwnerWallet(this.client, this.sessionSignerId, input);
+  }
+
+  async redeemDirectVault(input: Parameters<WalletPort["redeemDirectVault"]>[0]) {
+    const data = encodeFunctionData({ abi: erc4626Abi, functionName: "redeem", args: [BigInt(input.sharesRaw), input.walletAddress, input.walletAddress] });
+    const sent = await this.client.wallets().ethereum().sendTransaction(input.walletId, {
+      caip2: "eip155:8453", params: { transaction: { to: input.vaultAddress, data, value: "0x0", chain_id: 8453 } },
+      idempotency_key: input.idempotencyKey, authorization_context: this.authorizationContext,
+    });
+    if (sent.caip2 !== "eip155:8453" || !/^0x[0-9a-fA-F]{64}$/.test(sent.hash)) throw new Error("Invalid Base recall response.");
+    const transactionHash = sent.hash as HexHash;
+    const receipt = await this.baseClient.waitForTransactionReceipt({ hash: transactionHash, timeout: 55_000 });
+    if (receipt.status !== "success") throw new Error(`Recall reverted: ${transactionHash}`);
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== input.vaultAddress.toLowerCase()) continue;
+      try {
+        const event = decodeEventLog({ abi: erc4626Abi, data: log.data, topics: log.topics });
+        if (event.eventName === "Withdraw" && event.args.sender.toLowerCase() === input.walletAddress.toLowerCase()
+          && event.args.owner.toLowerCase() === input.walletAddress.toLowerCase() && event.args.receiver.toLowerCase() === input.walletAddress.toLowerCase()
+          && event.args.shares === BigInt(input.sharesRaw)) {
+          return { transactionHash, explorerUrl: `https://basescan.org/tx/${transactionHash}`,
+            assetsReceivedRaw: event.args.assets.toString(), sharesRedeemedRaw: event.args.shares.toString() };
+        }
+      } catch { /* Ignore unrelated logs. */ }
+    }
+    throw new Error(`Confirmed ${transactionHash}, but expected Withdraw receipt evidence is missing. Inspect before retrying.`);
   }
 
   async verifyPrivyEarnVault(configuredVault: { id: string; address: HexAddress }) {
@@ -90,7 +121,7 @@ export class PrivyWalletAdapter implements WalletPort {
     });
     const sent = await this.client.wallets().ethereum().sendTransaction(input.walletId, {
       caip2: "eip155:8453",
-      params: { transaction: { to: baseUsdc, data } },
+      params: { transaction: { to: baseUsdc, data, value: "0x0", chain_id: 8453 } },
       idempotency_key: input.idempotencyKey,
       authorization_context: this.authorizationContext,
     });
@@ -216,7 +247,7 @@ export class PrivyWalletAdapter implements WalletPort {
     });
     const sent = await this.client.wallets().ethereum().sendTransaction(input.walletId, {
       caip2: "eip155:8453",
-      params: { transaction: { to: baseUsdc, data } },
+      params: { transaction: { to: baseUsdc, data, value: "0x0", chain_id: 8453 } },
       idempotency_key: input.idempotencyKey,
       authorization_context: this.authorizationContext,
     });
@@ -257,7 +288,7 @@ export class PrivyWalletAdapter implements WalletPort {
     });
     const sent = await this.client.wallets().ethereum().sendTransaction(input.walletId, {
       caip2: "eip155:8453",
-      params: { transaction: { to: input.vaultAddress, data } },
+      params: { transaction: { to: input.vaultAddress, data, value: "0x0", chain_id: 8453 } },
       idempotency_key: input.idempotencyKey,
       authorization_context: this.authorizationContext,
     });

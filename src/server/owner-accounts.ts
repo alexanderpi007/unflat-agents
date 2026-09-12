@@ -19,6 +19,9 @@ export async function listOwnerAccounts(runtime: GatewayRuntime) {
     const mandate = await runtime.gateway.checkMandate(id);
     rows.push({ id, name: agent?.ensName ?? `${account!.name}.agents.unflat.eth`,
       ownerId: account?.ownerId ?? agent?.ownerId ?? "owner:legacy",
+      ownerEmail: agent?.ownership?.ownerEmail ?? account?.ownerEmail ?? null,
+      ownership: agent?.ownership?.kind ?? "app-owned-legacy",
+      ownerPortalUrl: "/owner-wallet",
       fundingAddress: agent?.walletAddress ?? null, balance,
       status: account?.status ?? "ready", mandate,
       ensExplorerUrl: `https://explorer.ens.dev/${agent?.ensName ?? `${account!.name}.agents.unflat.eth`}` });
@@ -38,5 +41,5 @@ export async function grantOwnerAccount(runtime: GatewayRuntime, agentId: string
   const request = await store.requestApproval({ id: requestId, agentId, principal,
     purpose: "Owner-initiated budget for this account.", status: "pending", createdAt: runtime.deps.clock.now().toISOString() });
   if (request.agentId !== agentId || request.principal !== principal) throw new Error("Request belongs to a different account.");
-  return decideRequest(runtime, request.id, true, confirmation);
+  return decideRequest(runtime, request.id, true, confirmation, agent.ownership?.kind === "privy-user");
 }

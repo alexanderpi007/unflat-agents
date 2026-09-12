@@ -1,4 +1,4 @@
-export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | "earn.sweep";
+export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | "earn.sweep" | "earn.recall" | "owner.transfer";
 
 export type HexAddress = `0x${string}`;
 export type HexHash = `0x${string}`;
@@ -7,6 +7,7 @@ export interface AgentAccount {
   id: string;
   name: string;
   ownerId: string;
+  ownerEmail?: string;
   tokenHash: string;
   status: "provisioning" | "ready" | "failed";
   createdAt: string;
@@ -25,6 +26,7 @@ export interface MandateRequest {
 export interface Agent {
   id: string;
   ownerId?: string;
+  ownership?: OwnerWalletIdentity;
   displayName: string;
   ensName: string;
   ensRegistrationTransaction?: string;
@@ -34,6 +36,14 @@ export interface Agent {
   walletId: string;
   walletAddress: HexAddress;
   createdAt: string;
+}
+
+export interface OwnerWalletIdentity {
+  kind: "privy-user";
+  ownerEmail: string;
+  privyUserId: string;
+  signerId: string;
+  policyId: string;
 }
 
 export interface Mandate {

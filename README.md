@@ -167,11 +167,13 @@ npm run mcp        # stdio MCP adapter (gateway must be running)
 
 ## MCP
 
+New accounts are **owner-owned Privy user wallets**, pregenerated for `owner_email`; the gateway is only a policy-limited additional signer. Atlas remains app-owned legacy. See [wallet ownership, recovery and configuration](docs/OWNERSHIP.md). This change is developed on `owner-wallets`, not merged into main.
+
 Streamable HTTP at `/api/mcp` and the retained `npm run mcp` stdio bridge expose exactly `get_account`, `request_mandate`, `pay`, `strategize`, `save`, and `statement`. No agent tool grants permission. Owner approval is a separate bearer-token role, with typed CONFIRM for a two-minute, $1.20 cap mandate. Financial/advice tools still go through the gateway and fresh Arkiv checks. Read/request tools work without an active mandate.
 
 Use the [owner laptop / agent laptop quickstart](docs/QUICKSTART-AGENT.md) and [tool inputs/outputs](docs/MCP.md). Set distinct `OWNER_TOKEN` and `MCP_AGENT_TOKEN` in `.env`; give only the owner token to Giacomo and only the agent token to the agent. Existing raw mutation APIs also require the owner bearer token plus `X-Unflat-Confirmation: CONFIRM`; the agent token cannot use them. Account-state REST reads require the owner token. Vercel exposes neither owner execution nor MCP execution.
 
-`MCP_AGENT_TOKEN` is enrollment-only: `get_account({name:"nova"})` creates a new Privy wallet and `nova.agents.unflat.eth`, returning its funding address and a **per-account token once**. Reconnect using that token for every later call. The store retains only token hashes; names cannot be reclaimed to recover a token. Owner mode lists all accounts and lets the human fund and grant/approve each separately. A stable public owner ID is written to ENS, never the owner secret. Atlas's existing wallet, name and history stay unchanged. Restart the local server after this store-schema upgrade; public Vercel behavior is unchanged.
+`MCP_AGENT_TOKEN` is enrollment-only: `get_account({name:"nova",owner_email:"owner@example.com"})` pregenerates an owner-owned Privy wallet and `nova.agents.unflat.eth`, returning its funding address and a **per-account token once**. Reconnect using that token for every later call. The store retains only token hashes; names cannot be reclaimed to recover a token. Owner mode lists accounts, emails and addresses, supports per-account grants/approvals and owner-only recovery, and links to a separate Privy owner login for direct withdrawal, export and revocation. A stable public owner ID is written to ENS, never the email or owner secret. Atlas's wallet, name and history stay unchanged. Restart the local server after this store-schema upgrade; public Vercel behavior is unchanged.
 
 ## Adapter modes
 

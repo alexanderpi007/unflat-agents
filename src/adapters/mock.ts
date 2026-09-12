@@ -38,6 +38,19 @@ export class MockWallet implements WalletPort {
     return { walletId, address: this.seededWallet?.address ?? addressFrom(walletId) };
   }
 
+  async createOwnerWallet(input: Parameters<WalletPort["createOwnerWallet"]>[0]) {
+    this.calls.push("createOwnerWallet");
+    const walletId = `owner_wallet_${input.accountId}`;
+    return { walletId, address: addressFrom(walletId), ownership: { kind: "privy-user" as const,
+      ownerEmail: input.ownerEmail, privyUserId: `did:privy:mock-${addressFrom(input.ownerEmail)}`,
+      signerId: "mock-session-signer", policyId: `mock-owner-policy-${input.accountId}` } };
+  }
+
+  async redeemDirectVault(input: Parameters<WalletPort["redeemDirectVault"]>[0]) {
+    this.calls.push(`redeemDirectVault:${input.vaultAddress}:${input.sharesRaw}`);
+    return { transactionHash: `0x${"6".repeat(64)}` as HexHash, assetsReceivedRaw: "1000000", sharesRedeemedRaw: input.sharesRaw };
+  }
+
   async verifyPrivyEarnVault() {
     this.calls.push("verifyPrivyEarnVault");
   }
@@ -213,6 +226,7 @@ export class MockAiMorgan implements AiMorganPort {
 }
 
 export class MockPreflight implements PreflightPort {
+  async verifyRecall() { return { allPassed: true, reason: "Mock canonical USDC vault, shares and redeem simulation passed.", assetsRaw: "1000000" }; }
   passes = true;
   readonly calls: string[] = [];
 

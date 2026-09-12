@@ -15,13 +15,17 @@ describe("public real-run export", () => {
   });
   it("does not copy private fields or arbitrary log text", () => {
     const secret = "DO_NOT_PUBLISH_THIS_SECRET";
-    const agent = { ...snapshot.agent, walletId: secret, secret };
+    const agent = { ...snapshot.agent, walletId: secret, secret, ownership: {
+      kind: "privy-user" as const, ownerEmail: "private-owner@example.com", privyUserId: secret, signerId: secret, policyId: secret,
+    } };
     const mandate = { ...snapshot.mandate, secret, opening: { secret }, ownerStatementKey: secret };
     const events = snapshot.events.map(e => e.action === "earn.sweep" ? { ...e, reason: e.reason + secret, secret } : e);
     const out = JSON.stringify(exportRealRun(agent, mandate, events));
     expect(out).not.toContain(secret);
     expect(out).not.toContain("ownerStatementKey");
     expect(out).not.toContain("statementReference");
+    expect(out).not.toContain("private-owner@example.com");
+    expect(out).not.toContain("ownership");
   });
   it("rejects incomplete and simulated runs", () => {
     expect(() => exportRealRun(snapshot.agent, snapshot.mandate, snapshot.events.slice(0, -1))).toThrow("complete LIVE");

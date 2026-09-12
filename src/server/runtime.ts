@@ -124,6 +124,7 @@ function resolvePrivy(forceMock: boolean, earnViaPrivy: boolean) {
         value("PRIVY_AUTHORIZATION_PRIVATE_KEY")!,
         value("PRIVY_POLICY_ID")!,
         value("BASE_RPC_URL")!,
+        value("PRIVY_SESSION_SIGNER_ID"),
       ),
       preflight: new BaseEarnPreflightAdapter(value("BASE_RPC_URL")!),
       vaults,

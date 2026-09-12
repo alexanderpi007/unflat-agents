@@ -14,10 +14,11 @@ export class AgentService {
     if (!account || account.status !== "ready") throw new Error("REFUSED — account provisioning is incomplete. Ask the owner to inspect it; no automatic retry.");
     return this.runtime.gateway.state(this.agentId);
   }
-  async getAccount(name?: string) {
-    if (!this.accountId) return enroll(this.runtime, name);
+  async getAccount(name?: string, ownerEmail?: string) {
+    if (!this.accountId) return enroll(this.runtime, name, ownerEmail);
     const account = await this.runtime.deps.store.getAccount(this.agentId);
     if (!account || (name !== undefined && accountName.parse(name) !== account.name)) throw new Error("REFUSED — account token cannot access or create a different name.");
+    if (ownerEmail !== undefined && ownerEmail.trim().toLowerCase() !== account.ownerEmail) throw new Error("REFUSED — account token cannot change the owner identity.");
     if (account.status !== "ready") return { accountId: account.id, name: account.name, status: account.status,
       fundingAddress: (await this.runtime.deps.store.getAgent(account.id))?.walletAddress ?? null,
       detail: "Provisioning incomplete. Ask the owner to inspect this account before funding." };
@@ -26,6 +27,7 @@ export class AgentService {
     const request = (await this.runtime.deps.store.listApprovals()).findLast(r => r.agentId === this.agentId && r.principal === account.tokenHash);
     return { accountId: this.agentId, ownerId: account.ownerId, status: account.status,
       name: state.agent.ensName, wallet: state.agent.walletAddress, fundingAddress: state.agent.walletAddress,
+      ownership: state.agent.ownership?.kind ?? "app-owned-legacy", ownerEmail: state.agent.ownership?.ownerEmail,
       balance: await this.runtime.gateway.usdcBalance(this.agentId).catch(() => null), mandate: decision,
       requestStatus: request?.status ?? "none", moneyMode: this.runtime.health.adapters.privy.mode };
   }
@@ -70,7 +72,7 @@ export class AgentService {
   }
 }
 
-export async function decideRequest(runtime: GatewayRuntime, id: string, approve: boolean, confirmation?: string) {
+export async function decideRequest(runtime: GatewayRuntime, id: string, approve: boolean, confirmation?: string, ownerRecovery = false) {
   const store = runtime.deps.store;
   const request = (await store.listApprovals()).find(r => r.id === id);
   if (!request || request.status !== "pending") throw new Error("Request is not pending; it cannot be approved twice.");
@@ -83,7 +85,7 @@ export async function decideRequest(runtime: GatewayRuntime, id: string, approve
   try {
     const mandate = await runtime.gateway.grantMandate({ agentId: request.agentId, ownerId: account?.ownerId ?? "owner:token-approved",
       durationSeconds: 120, maxPerActionUsdcCents: 100, maxTotalUsdcCents: 120,
-      allowedActions: ["usdc.transfer", "aimorgan.strategize", "earn.sweep"] });
+      allowedActions: ["usdc.transfer", "aimorgan.strategize", "earn.sweep", ...(ownerRecovery ? ["earn.recall", "owner.transfer"] as const : [])] });
     await store.transitionApproval(id, "approving", "approved", mandate.id);
     return { status: "approved", expiresAt: mandate.expiresAt };
   } catch {
