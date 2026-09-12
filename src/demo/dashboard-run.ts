@@ -23,14 +23,14 @@ export async function demoAgent(runtime: GatewayRuntime, mode: DemoMoney): Promi
     if (!agent || agent.walletAddress.toLowerCase() !== persistentWalletAddress.toLowerCase()) {
       throw new Error("Persistent Privy wallet missing or different. Restore the local gateway store; no new wallet was created.");
     }
-    return agent;
+    return runtime.gateway.ensureAgentIdentity(agent.id);
   }
   // Isolate each public mandate/accounting session while displaying the same wallet; never provision a wallet.
   const agent: Agent = { id: randomUUID(), displayName: "Atlas", ensName: "atlas.agents.unflat.eth",
     walletAddress: persistentWalletAddress, walletId: "mock-money-no-signing-wallet",
     createdAt: new Date().toISOString() };
   await runtime.deps.store.putAgent(agent);
-  return agent;
+  return runtime.gateway.ensureAgentIdentity(agent.id);
 }
 
 export function requireDemoAdapters(runtime: GatewayRuntime, mode: DemoMoney) {

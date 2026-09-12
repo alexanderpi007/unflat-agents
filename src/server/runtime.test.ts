@@ -8,6 +8,26 @@ const adapterKeys = ["privy", "aiMorgan", "arkiv", "swarm", "ens"] as const;
 afterEach(() => vi.unstubAllEnvs());
 
 describe("per-adapter runtime resolution", () => {
+  it("forces keyless live ENS on Vercel even if invalid signing keys are present", () => {
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("ENS_DEPLOYER_PRIVATE_KEY", "must-not-be-used");
+    vi.stubEnv("ENS_GATEWAY_PRIVATE_KEY", "must-not-be-used");
+    vi.stubEnv("SEPOLIA_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com");
+    const result = createApplicationRuntime({ store: new MemoryGatewayStore() });
+    expect(result.health.adapters.ens.mode).toBe("live");
+    expect(result.health.adapters.ens.detail).toContain("read-only");
+    expect(result.health.adapters.privy.mode).toBe("mock");
+  });
+  it("selects live ENS independently from mock money without exposing its signer", () => {
+    vi.stubEnv("MOCK_MODE", "true");
+    vi.stubEnv("ENS_DEPLOYER_PRIVATE_KEY", `0x${"01".repeat(32)}`);
+    vi.stubEnv("ENS_GATEWAY_PRIVATE_KEY", `0x${"02".repeat(32)}`);
+    vi.stubEnv("SEPOLIA_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com");
+    const result = createApplicationRuntime({ store: new MemoryGatewayStore() });
+    expect(result.health.adapters.ens.mode).toBe("live");
+    expect(result.deps).not.toHaveProperty("ens");
+    expect(createApplicationRuntime({ fullyMocked: true }).health.adapters.ens.mode).toBe("mock");
+  });
   it("the mock gateway can spend simulated money without a configured real recipient", async () => {
     vi.stubEnv("DEMO_PAYMENT_RECIPIENT", "");
     const result = createApplicationRuntime({ fullyMocked: true, store: new MemoryGatewayStore() });
@@ -47,7 +67,8 @@ describe("per-adapter runtime resolution", () => {
       '[{"id":"vault","address":"0x0000000000000000000000000000000000000001","label":"test"}]',
     );
     vi.stubEnv("ARKIV_PRIVATE_KEY", "");
-    vi.stubEnv("ENSV2_REGISTRAR_URL", "");
+    vi.stubEnv("ENS_DEPLOYER_PRIVATE_KEY", "");
+    vi.stubEnv("SEPOLIA_RPC_URL", "");
 
     const result = createApplicationRuntime({ store: new MemoryGatewayStore() });
 

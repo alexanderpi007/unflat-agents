@@ -15,8 +15,12 @@ export async function GET(request: Request) {
     const local = isLocalRequest(request);
     const state = local && await gatewayRuntime.deps.store.getAgent(persistentAgentId)
       ? await gatewayRuntime.gateway.state(persistentAgentId) : null;
+    const resolved = await gatewayRuntime.gateway.resolveIdentity("atlas.agents.unflat.eth").catch(() => null);
+    const identity = { displayName: "Atlas", ensName: "atlas.agents.unflat.eth", walletAddress: persistentWalletAddress,
+      ensResolvedAddress: resolved?.address ?? null, ensMode: resolved?.mode, ensExplorerUrl: resolved?.explorerUrl,
+      ensRegistrationTransaction: resolved?.mode === "live" ? "0xb3026ea2ad2d53cd463fbe47a3cfcda39c218d7f53b78a6836fc9a54adfaf5bf" : undefined };
     const vault = gatewayRuntime.deps.vaultAllowlist.find(v => v.execution === "direct-morpho");
-    return Response.json({ state, localLiveAvailable: local, walletAddress: persistentWalletAddress,
+    return Response.json({ state, identity, localLiveAvailable: local, walletAddress: persistentWalletAddress,
       plan: { recipient: gatewayRuntime.deps.demoPaymentRecipient, vault: vault?.address,
         transferUsdc: "0.05", depositUsdc: "1.00", totalUsdc: "1.05", network: "Base mainnet", fee: "plus gas" } },
     { headers: { "Cache-Control": "no-store" } });

@@ -49,23 +49,24 @@ On localhost only, **Run LIVE (Base mainnet)** displays the exact configured rec
 | AIMorgan | Simulated strategy/validation | External dry then fee-waived strategy; validation required | Simulated |
 | APY card | Read-only Morpho API, or explicitly unavailable | Same source | No invented APY |
 | Swarm ID | Real owner-selected drive after browser connection | Same | Simulated CLI storage |
-| ENS | Mock identity display; bounty in progress | Mock unless registrar configured | Mock |
+| ENS | **LIVE — read-only Sepolia resolution** of the registered Atlas name; no ENS signing keys | **LIVE** ENSv2 registration, delegated roles and resolve-back with configured keys | Mock |
 
 `MOCK_MODE=true` means **mock money**, not mock Arkiv. Missing Arkiv configuration refuses the dashboard run rather than fabricating an entity. Each public run uses an isolated agent/session ID and in-memory accounting with the same displayed wallet; no local record authorizes an action without Arkiv. The public demo consumes testnet gas and depends on the funded creator key/network. It is a hackathon demo, not an authenticated multi-tenant financial service.
 
-## Three live proofs
+## Four live proofs
 
 1. **Base mainnet (historical live run):** [0.05 USDC transfer](https://basescan.org/tx/0xb082890bd85d47e8488b0bc268f04a3cd6ce5636a223f300192e033ff36a7c12), [exact approval](https://basescan.org/tx/0x655042d61c625741c24c97588b9af62113c171b0a692d9c4b3684eee1a1a0e6b), [1 USDC Morpho deposit](https://basescan.org/tx/0x3d82d0a3e51fc99655736a02831a2a93599c2628ea58888a6de427202afd313f). Recorded shares: `0.961330596878870251`. These are not the synthetic hashes in the Swarm mock-statement proof.
 2. **Arkiv:** [entity and natural-expiration proof](https://tiramisu.explorer.arkiv.network/entity/0xab606272c6fffe0338e5dfd0cb56e55d8233978499607f1483938d597d12582f), found at block 349722, empty at 349784; gateway refused without delete/extend. See [Mission 02 evidence](./arkiv/submission.md).
 3. **Swarm:** owner verified a 5,582-byte mock-demo statement uploaded with native encryption + deferred mode and retrieved as matching plaintext, with approximately four-day drive TTL. See [retrieval evidence and reproduction](./swarm/README.md). The owner-held secret reference is never committed or sent to the gateway.
+4. **ENSv2 Sepolia:** [Atlas identity](https://explorer.ens.dev/atlas.agents.unflat.eth), [registration transaction](https://sepolia.etherscan.io/tx/0xb3026ea2ad2d53cd463fbe47a3cfcda39c218d7f53b78a6836fc9a54adfaf5bf), independently resolved to `0xe35285DDaBDD0d0C2F70F4067f7E06341E8a44e7`. The public site reads this live; [roles and record evidence](ens/README.md).
 
 ## Swarm bounty — browser identity and owner storage
 
 Swarm ID supplies the trusted popup/proxy iframe, owner drive postage, native encryption and retrieval. Live round-trip verified by the owner; no Bee node or server postage configuration is required. [Implementation and evidence](./swarm/README.md).
 
-## ENS bounty — in progress
+## ENS bounty — verified on Sepolia
 
-The dashboard identity is currently mocked. ENSv2 beta on Sepolia under `agents.unflat.eth` requires a working registrar integration and independent resolution proof before claiming completion. No live ENS registration is claimed.
+[`atlas.agents.unflat.eth`](https://explorer.ens.dev/atlas.agents.unflat.eth) resolves on ENSv2 Sepolia to the persistent Privy wallet `0xe35285DDaBDD0d0C2F70F4067f7E06341E8a44e7`. [Registration transaction](https://sepolia.etherscan.io/tx/0xb3026ea2ad2d53cd463fbe47a3cfcda39c218d7f53b78a6836fc9a54adfaf5bf), [gateway record-role delegation](https://sepolia.etherscan.io/tx/0x15696848e642e3389d200ee0dfa7fbc136509ca60236e158882b78ffd061df8b), [Arkiv commitment record update](https://sepolia.etherscan.io/tx/0xa7df8c7f43d9463860574f1b5a9fb76ebb2eef4d83769872277c253233b3fbb5). The deployer owns the parent; a distinct gateway signer has only child-registration authority and name-scoped address/text roles. The gateway refuses unresolved or mismatched identities and re-resolves before every financial signing reservation. Records bind the wallet, owner, gateway URL and latest locally signed Arkiv commitment. The public dashboard resolves ENS live with only `SEPOLIA_RPC_URL`: no ENS private keys are deployed, and Vercel always selects the keyless reader. Public mock-money runs create real Arkiv mandates but do not update ENS records; their statements explicitly disclose this. See [ENS architecture, contracts and proof](ens/README.md).
 
 ## Mission completed: Mission 02 — Built to expire
 
@@ -139,7 +140,7 @@ npm run verify:mandate <agent> # public, amount-free Arkiv existence check
 npm run mcp        # stdio MCP adapter (gateway must be running)
 ```
 
-`npm run test` includes a live Tiramisu integration test and therefore requires a funded `ARKIV_PRIVATE_KEY`; it creates one short-lived test entity. Other gateway safety tests keep Base, Privy, AIMorgan, Swarm and ENS mocked.
+`npm run test` includes a live Tiramisu integration test requiring a funded `ARKIV_PRIVATE_KEY` (one short-lived test entity) and a read-only Sepolia resolve-back test for the created Atlas identity using `SEPOLIA_RPC_URL`. Gateway safety tests mock external services and prove missing/changing ENS resolution refuses before signing. `npm run demo:mock` stays fully offline.
 
 ## API
 
@@ -178,7 +179,7 @@ Tools: `create_agent`, `grant_mandate`, `pay_x402`, `transfer_usdc`, `strategize
 
 ## Adapter modes
 
-Copy `.env.example` to `.env`. `MOCK_MODE=true` mocks financial actions; configured Arkiv, read-only Morpho APY and browser Swarm remain live. `demo:mock` explicitly forces all mocks. Local LIVE dashboard execution requires complete Privy/AIMorgan/Arkiv configuration and rejects any financial mock fallback. Vercel forces mock money regardless of environment values. Missing or malformed configuration never crashes module evaluation.
+Copy `.env.example` to `.env`. `MOCK_MODE=true` mocks financial actions; configured Arkiv/ENS, read-only Morpho APY and browser Swarm remain live. `SEPOLIA_RPC_URL` alone enables live read-only ENS. Local ENS writes require `ENS_DEPLOYER_PRIVATE_KEY` and the distinct `ENS_GATEWAY_PRIVATE_KEY`, funded on Sepolia and granted roles through `npm run setup:ens`. No HTTP registrar service is needed. `demo:mock` explicitly forces all mocks. Local LIVE dashboard execution requires complete Privy/AIMorgan/Arkiv configuration and rejects any financial mock fallback. Vercel forces mock money and keyless ENS regardless of signing-key environment values. Missing or malformed configuration never crashes module evaluation.
 
 Live mode atomically persists private mandate terms, commitment openings, accounting and idempotency state at `GATEWAY_STORE_PATH` (default `.data/gateway.json`, permissions `0600`). Arkiv's uncached live query is the authorization source; local presence or timestamps cannot make an expired entity valid. Point the store at durable storage for deployment; mock and scripted demo runs remain isolated in memory.
 

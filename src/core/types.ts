@@ -7,6 +7,10 @@ export interface Agent {
   id: string;
   displayName: string;
   ensName: string;
+  ensRegistrationTransaction?: string;
+  ensResolvedAddress?: HexAddress | null;
+  ensExplorerUrl?: string;
+  ensMode?: "live" | "mock";
   walletId: string;
   walletAddress: HexAddress;
   createdAt: string;

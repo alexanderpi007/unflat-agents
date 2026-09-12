@@ -98,9 +98,15 @@ export class MockVaultRate implements VaultRatePort {
 }
 
 export class MockEns implements EnsPort {
-  async createIdentity(label: string) {
+  private readonly addresses = new Map<string, HexAddress>();
+  async createIdentity(label: string, address: HexAddress) {
+    this.addresses.set(`${label}.agents.unflat.eth`, address);
     return { name: `${label}.agents.unflat.eth`, reference: `ensv2:sepolia:${label}` };
   }
+  async resolveIdentity(name: string) {
+    return { address: this.addresses.get(name) ?? null, explorerUrl: "", mode: "mock" as const };
+  }
+  async setMandateCommitment() { return {}; }
 }
 
 export class MockArkiv implements ArkivPort {

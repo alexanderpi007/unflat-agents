@@ -84,7 +84,9 @@ export interface VaultRatePort {
 }
 
 export interface EnsPort {
-  createIdentity(label: string, owner: HexAddress): Promise<{ name: string; reference: string }>;
+  createIdentity(label: string, owner: HexAddress, ownerId?: string): Promise<{ name: string; reference: string }>;
+  resolveIdentity(name: string): Promise<{ address: HexAddress | null; explorerUrl: string; mode: "live" | "mock" }>;
+  setMandateCommitment(name: string, commitment: HexAddress, ownerId: string): Promise<{ reference?: string; detail?: string }>;
 }
 
 export interface ArkivPort {

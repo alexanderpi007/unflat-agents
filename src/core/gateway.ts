@@ -31,9 +31,13 @@ export class SigningGateway {
     return this.provisionAgent(randomUUID(), displayName);
   }
 
+  async setupIdentityNamespace<T>(admin: { setup(): Promise<T> }): Promise<T> {
+    return admin.setup();
+  }
+
   async getOrCreateAgent(agentId: string, displayName: string): Promise<{ agent: Agent; reused: boolean }> {
     const existing = await this.deps.store.getAgent(agentId);
-    if (existing) return { agent: existing, reused: true };
+    if (existing) return { agent: await this.ensureAgentIdentity(agentId), reused: true };
     return { agent: await this.provisionAgent(agentId, displayName), reused: false };
   }
 
@@ -46,18 +50,33 @@ export class SigningGateway {
     if (!label) throw new Error("Agent name must contain a letter or number.");
 
     const wallet = await this.deps.wallet.createWallet();
-    const identity = await this.deps.ens.createIdentity(label, wallet.address);
     const agent: Agent = {
       id: agentId,
       displayName,
-      ensName: identity.name,
+      ensName: `${label}.agents.unflat.eth`,
       walletId: wallet.walletId,
       walletAddress: wallet.address,
       createdAt: this.deps.clock.now().toISOString(),
     };
     await this.deps.store.putAgent(agent);
-    await this.event(agent.id, "agent.create", "completed", 0, `Agent created as ${identity.name}.`, identity.reference);
-    return agent;
+    const registered = await this.ensureAgentIdentity(agent.id);
+    await this.event(agent.id, "agent.create", "completed", 0, `Agent created as ${registered.ensName}.`,
+      registered.ensRegistrationTransaction ? `https://sepolia.etherscan.io/tx/${registered.ensRegistrationTransaction}` : `ensv2:mock:${registered.ensName}`);
+    return registered;
+  }
+
+  async ensureAgentIdentity(agentId: string, ownerId = "owner:demo"): Promise<Agent> {
+    const agent = await this.deps.store.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found.");
+    const label = agent.displayName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "").slice(0, 36);
+    const identity = await this.deps.ens.createIdentity(label, agent.walletAddress, ownerId);
+    const updated = { ...agent, ensName: identity.name };
+    if (/^0x[0-9a-f]{64}$/i.test(identity.reference)) {
+      updated.ensRegistrationTransaction = identity.reference;
+      await this.event(agent.id, "ens.register", "completed", 0, `Registered ${identity.name} on ENSv2 Sepolia.`, `https://sepolia.etherscan.io/tx/${identity.reference}`);
+    }
+    await this.deps.store.putAgent(updated);
+    return updated;
   }
 
   async previewStrategize(input: { agentId: string; totalUsdcCents: number }) {
@@ -111,7 +130,7 @@ export class SigningGateway {
     maxTotalUsdcCents: number;
     allowedActions?: ActionKind[];
   }): Promise<Mandate> {
-    if (!(await this.deps.store.getAgent(input.agentId))) throw new Error("Agent not found.");
+    const agent = await this.requireAgent(input.agentId);
     if (input.durationSeconds <= 0) throw new Error("Mandate duration must be positive.");
     if (input.maxPerActionUsdcCents <= 0 || input.maxTotalUsdcCents <= 0) {
       throw new Error("Mandate limits must be positive.");
@@ -158,6 +177,11 @@ export class SigningGateway {
       arkivCommitment: arkiv.commitment,
     };
     await this.deps.store.putMandateOpening(opening);
+    const identityUpdate = await this.deps.ens.setMandateCommitment(agent.ensName, arkiv.commitment, input.ownerId);
+    if (identityUpdate.detail) await this.event(agent.id, "ens.readonly", "completed", 0, identityUpdate.detail);
+    if (identityUpdate.reference) await this.event(agent.id, "ens.records", "completed", 0,
+      "ENS mandate.commitment updated to the published Arkiv commitment; owner record updated.",
+      `https://sepolia.etherscan.io/tx/${identityUpdate.reference}`);
     await this.deps.store.putMandate(published);
     await this.event(
       input.agentId,
@@ -181,7 +205,7 @@ export class SigningGateway {
       await this.requirePriceValidation(input.agentId, "x402.pay", validation);
 
       // Atomic TTL/budget re-check immediately before the only signing-capable call.
-      const signingDecision = await this.mandates.decideAndReserve(
+      const signingDecision = await this.reserveMandate(
         input.agentId,
         "x402.pay",
         quote.amountUsdcCents,
@@ -241,7 +265,7 @@ export class SigningGateway {
         });
       }
 
-      const signingDecision = await this.mandates.decideAndReserve(
+      const signingDecision = await this.reserveMandate(
         input.agentId,
         "usdc.transfer",
         input.amountUsdcCents,
@@ -331,7 +355,7 @@ export class SigningGateway {
         });
       }
 
-      const signingDecision = await this.mandates.decideAndReserve(
+      const signingDecision = await this.reserveMandate(
         input.agentId,
         "aimorgan.strategize",
         quote.amountUsdcCents,
@@ -416,7 +440,7 @@ export class SigningGateway {
           );
         } else {
           // Approval moves no funds, so the locked check validates the full amount while reserving zero cents.
-          const approvalDecision = await this.mandates.decideAndReserve(
+          const approvalDecision = await this.reserveMandate(
             input.agentId,
             "earn.sweep",
             input.amountUsdcCents,
@@ -460,7 +484,7 @@ export class SigningGateway {
           });
         }
 
-        const signingDecision = await this.mandates.decideAndReserve(
+        const signingDecision = await this.reserveMandate(
           input.agentId,
           "earn.sweep",
           input.amountUsdcCents,
@@ -499,7 +523,7 @@ export class SigningGateway {
         return { vault, preflight: { ...preflight, simulation }, deposit, decision: signingDecision };
       }
 
-      const signingDecision = await this.mandates.decideAndReserve(
+      const signingDecision = await this.reserveMandate(
         input.agentId,
         "earn.sweep",
         input.amountUsdcCents,
@@ -546,7 +570,11 @@ export class SigningGateway {
   }
 
   async state(agentId: string) {
-    const agent = await this.requireAgent(agentId);
+    const stored = await this.deps.store.getAgent(agentId);
+    if (!stored) throw new Error("Agent not found.");
+    const resolved = await this.deps.ens.resolveIdentity(stored.ensName).catch(() => null);
+    const agent = { ...stored, ensResolvedAddress: resolved?.address ?? null,
+      ensExplorerUrl: resolved?.explorerUrl, ensMode: resolved?.mode };
     return {
       agent,
       mandate: await this.deps.store.getMandate(agentId),
@@ -556,6 +584,10 @@ export class SigningGateway {
 
   async queryMandate(agentId: string) {
     return this.deps.arkiv.findValidMandates(agentId);
+  }
+
+  async resolveIdentity(name: string) {
+    return this.deps.ens.resolveIdentity(name);
   }
 
   async vaultRate() {
@@ -637,7 +669,19 @@ export class SigningGateway {
   private async requireAgent(agentId: string): Promise<Agent> {
     const agent = await this.deps.store.getAgent(agentId);
     if (!agent) throw new Error("Agent not found.");
+    const resolved = await this.deps.ens.resolveIdentity(agent.ensName).catch(() => null);
+    if (!resolved?.address || resolved.address.toLowerCase() !== agent.walletAddress.toLowerCase()) {
+      return this.refuse(agentId, "ens.resolve", 0, {
+        allowed: false, checkedAt: this.deps.clock.now().toISOString(), remainingUsdcCents: 0,
+        reason: "REFUSED — ENS identity is unresolved, unavailable, or does not match the agent wallet. No payment or signing was attempted.",
+      });
+    }
     return agent;
+  }
+
+  private async reserveMandate(...args: Parameters<MandateService["decideAndReserve"]>) {
+    await this.requireAgent(args[0]);
+    return this.mandates.decideAndReserve(...args);
   }
 
   private async event(

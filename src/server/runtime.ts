@@ -20,6 +20,7 @@ import {
 import { AiMorganRestAdapter } from "@/adapters/live/aimorgan";
 import { ArkivMandateAdapter } from "@/adapters/live/arkiv";
 import { EnsV2RegistrarAdapter } from "@/adapters/live/ens";
+import { ReadOnlyEnsAdapter } from "@/adapters/live/ens-readonly";
 import { BaseEarnPreflightAdapter } from "@/adapters/live/preflight";
 import { PrivyWalletAdapter } from "@/adapters/live/privy";
 import { MorphoVaultRateAdapter } from "@/adapters/live/morpho";
@@ -179,22 +180,33 @@ function resolveSwarm(forceMock: boolean) {
       };
 }
 
-function resolveEns(forceMock: boolean) {
-  const absent = missing(["ENSV2_REGISTRAR_URL"]);
+function resolveEns(forceMock: boolean, mockMoney: boolean) {
+  const rpc = value("SEPOLIA_RPC_URL");
+  if (!forceMock && rpc && (process.env.VERCEL || !value("ENS_DEPLOYER_PRIVATE_KEY"))) {
+    try {
+      new URL(rpc);
+      return { adapter: new ReadOnlyEnsAdapter(rpc, mockMoney),
+        status: liveStatus("ENSv2 Sepolia LIVE · read-only resolution. No ENS signer; public runs never change ENS records.") };
+    } catch {
+      return { adapter: new MockEns(), status: mockStatus("Invalid Sepolia RPC configuration.") };
+    }
+  }
+  const absent = missing(["ENS_DEPLOYER_PRIVATE_KEY", "SEPOLIA_RPC_URL"]);
   if (forceMock || absent.length) {
     return { adapter: new MockEns(), status: mockStatus(mockReason(forceMock, absent)) };
   }
   try {
-    new URL(value("ENSV2_REGISTRAR_URL")!);
-    if (value("SEPOLIA_RPC_URL")) new URL(value("SEPOLIA_RPC_URL")!);
+    new URL(value("SEPOLIA_RPC_URL")!);
     return {
-      adapter: new EnsV2RegistrarAdapter(value("ENSV2_REGISTRAR_URL")!, value("SEPOLIA_RPC_URL")),
-      status: liveStatus("ENSv2 registrar configured; Sepolia resolution is independently checked."),
+      adapter: new EnsV2RegistrarAdapter(value("ENS_DEPLOYER_PRIVATE_KEY")! as `0x${string}`, value("SEPOLIA_RPC_URL")!, value("ENS_GATEWAY_PRIVATE_KEY") as `0x${string}` | undefined),
+      status: liveStatus(value("ENS_GATEWAY_PRIVATE_KEY")
+        ? "ENSv2 Sepolia contracts configured; distinct gateway signer and independent resolve-back."
+        : "ENSv2 Sepolia reads configured; ENS_GATEWAY_PRIVATE_KEY required for writes (no deployer fallback)."),
     };
   } catch (error) {
     return {
       adapter: new MockEns(),
-      status: mockStatus(`Invalid ENS configuration: ${error instanceof Error ? error.message : "unknown error"}`),
+      status: mockStatus("Invalid ENS key or RPC configuration; no signing enabled."),
     };
   }
 }
@@ -202,7 +214,7 @@ function resolveEns(forceMock: boolean) {
 export interface GatewayRuntime {
   gateway: SigningGateway;
   health: RuntimeHealth;
-  deps: Omit<Dependencies, "wallet">;
+  deps: Omit<Dependencies, "wallet" | "ens">;
 }
 
 export function createApplicationRuntime(options: { clock?: Clock; store?: GatewayStore; mockMoney?: boolean; fullyMocked?: boolean } = {}): GatewayRuntime {
@@ -214,7 +226,7 @@ export function createApplicationRuntime(options: { clock?: Clock; store?: Gatew
   const aiMorgan = resolveAiMorgan(globalMockOverride, aiMorganX402);
   const arkiv = resolveArkiv(!!options.fullyMocked, clock);
   const swarm = resolveSwarm(!!options.fullyMocked);
-  const ens = resolveEns(globalMockOverride);
+  const ens = resolveEns(!!options.fullyMocked, globalMockOverride);
   const deps: Dependencies = {
     store: options.store ?? (process.env.VERCEL ? new MemoryGatewayStore() : new FileGatewayStore(
       value("GATEWAY_STORE_PATH") ?? join(process.cwd(), ".data", "gateway.json"),
@@ -235,7 +247,7 @@ export function createApplicationRuntime(options: { clock?: Clock; store?: Gatew
       ? value("DEMO_PAYMENT_RECIPIENT") as HexAddress
       : globalMockOverride ? "0x000000000000000000000000000000000000dEaD" : undefined,
   };
-  const { wallet: signingWallet, ...nonSigningDeps } = deps;
+  const { wallet: signingWallet, ens: signingIdentity, ...nonSigningDeps } = deps;
   return {
     deps: nonSigningDeps,
     gateway: new SigningGateway(deps),

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeClock } from "./clock";
 import { RefusalError } from "./errors";
 import { aimorganFeeWaivedLabel, directMorphoLabel } from "./labels";
@@ -21,6 +21,27 @@ async function ready(clock = start(), aiMorganX402 = false) {
 }
 
 describe("SigningGateway safety boundary", () => {
+  it("refuses an unresolved ENS identity before AIMorgan, payment or signing", async () => {
+    const runtime = await ready();
+    vi.spyOn(runtime.deps.ens, "resolveIdentity").mockResolvedValue({ address: null, explorerUrl: "", mode: "live" });
+    const before = runtime.wallet.calls.length;
+    await expect(runtime.gateway.transferUsdc({ agentId: runtime.agent.id,
+      recipient: "0x000000000000000000000000000000000000dEaD", amountUsdcCents: 5, idempotencyKey: "ens-missing" })).rejects.toThrow("ENS identity is unresolved");
+    expect(runtime.wallet.calls).toHaveLength(before);
+    expect(runtime.aiMorgan.strategizeCalls).toHaveLength(0);
+    expect(runtime.x402.calls).not.toContain("submit");
+    expect((await runtime.gateway.state(runtime.agent.id)).events.at(-1)?.status).toBe("refused");
+  });
+
+  it("rechecks ENS immediately before reserving for signing", async () => {
+    const runtime = await ready();
+    const resolve = vi.spyOn(runtime.deps.ens, "resolveIdentity");
+    resolve.mockResolvedValueOnce({ address: runtime.agent.walletAddress, explorerUrl: "", mode: "live" });
+    resolve.mockResolvedValue({ address: null, explorerUrl: "", mode: "live" });
+    await expect(runtime.gateway.transferUsdc({ agentId: runtime.agent.id,
+      recipient: "0x000000000000000000000000000000000000dEaD", amountUsdcCents: 5, idempotencyKey: "ens-changed" })).rejects.toThrow("ENS identity is unresolved");
+    expect(runtime.wallet.calls.some(call => call.startsWith("transferUsdc"))).toBe(false);
+  });
   it("reuses the one persisted agent wallet instead of creating another", async () => {
     const runtime = createMockRuntime(start());
     const agentId = "a7100000-0000-4000-8000-000000000001";

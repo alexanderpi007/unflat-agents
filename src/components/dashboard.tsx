@@ -43,6 +43,7 @@ export function Dashboard() {
   const [health, setHealth] = useState<RuntimeHealth>();
   const [healthError, setHealthError] = useState(false);
   const [liveState, setLiveState] = useState<LiveState>();
+  const [publicIdentity, setPublicIdentity] = useState<Partial<Agent>>();
   const [localLiveAvailable, setLocalLiveAvailable] = useState(false);
   const [plan, setPlan] = useState<DemoPlan>();
   const [walletAddress, setWalletAddress] = useState("");
@@ -75,6 +76,7 @@ export function Dashboard() {
         if (!response.ok) throw new Error(body.error ?? "Live demo state unavailable.");
         if (active && body.state) setLiveState(body.state);
         if (active) {
+          setPublicIdentity(body.identity);
           setLocalLiveAvailable(body.localLiveAvailable === true && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname));
           setPlan(body.plan); setWalletAddress(body.walletAddress ?? "");
         }
@@ -122,7 +124,8 @@ export function Dashboard() {
   }
 
   const snapshot = result?.snapshot;
-  const displayedAgent = result ? snapshot?.agent : liveState?.agent;
+  const statementAgent = result ? snapshot?.agent : liveState?.agent;
+  const displayedAgent = statementAgent ?? publicIdentity;
   const displayedMandate = result ? snapshot?.mandate : liveState?.mandate;
   const displayedEvents = result ? snapshot?.events ?? [] : liveState?.events ?? [];
   const mandateCap = displayedMandate?.maxTotalUsdcCents ?? 105;
@@ -203,7 +206,10 @@ export function Dashboard() {
           <dl>
             <div><dt>PERSISTENT PRIVY WALLET</dt><dd title={displayedAgent?.walletAddress ?? walletAddress}>{short(displayedAgent?.walletAddress ?? walletAddress) || "0x—"}</dd></div>
             <div><dt>IDENTITY RAIL</dt><dd>ENSv2 · Sepolia</dd></div>
+            <div><dt>ENS RESOLVE-BACK {displayedAgent?.ensMode === "mock" ? "· MOCK" : ""}</dt><dd title={displayedAgent?.ensResolvedAddress ?? ""}>{displayedAgent?.ensResolvedAddress ? short(displayedAgent.ensResolvedAddress) : "Not resolved"}</dd></div>
           </dl>
+          {displayedAgent?.ensExplorerUrl && <a href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">ENS Explorer ↗</a>}
+          {displayedAgent?.ensRegistrationTransaction && <a href={`https://sepolia.etherscan.io/tx/${displayedAgent.ensRegistrationTransaction}`} target="_blank" rel="noreferrer">Registration transaction ↗</a>}
         </article>
 
         <article className="balance-card panel">
@@ -255,7 +261,8 @@ export function Dashboard() {
                 <i className={event.status} />
                 <div>
                   <strong>{event.action}</strong><p>{event.reason}</p>
-                  {result?.moneyMode !== "mock" && /^0x[0-9a-fA-F]{64}$/.test(event.reference ?? "") && (
+                  {event.reference?.startsWith("https://sepolia.etherscan.io/tx/") && <a href={event.reference} target="_blank" rel="noreferrer">ENS transaction · Sepolia ↗</a>}
+                  {result?.moneyMode !== "mock" && !event.action.startsWith("ens.") && event.action !== "agent.create" && /^0x[0-9a-fA-F]{64}$/.test(event.reference ?? "") && (
                     <a href={`https://basescan.org/tx/${event.reference}`} target="_blank" rel="noreferrer">
                       {short(event.reference!, 10)} · BaseScan ↗
                     </a>
@@ -287,8 +294,8 @@ export function Dashboard() {
             <p className="advisory">AIMorgan recommends. unflat decides where real funds go.</p>
           </article>
 
-          <OwnerRecord statement={displayedAgent && displayedMandate ? {
-            agent: displayedAgent, mandate: displayedMandate, events: displayedEvents,
+          <OwnerRecord statement={statementAgent && displayedMandate ? {
+            agent: statementAgent, mandate: displayedMandate, events: displayedEvents,
             source: result?.moneyMode === "mock" ? "mock-demo" : "gateway",
           } : undefined} />
         </aside>
