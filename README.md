@@ -6,7 +6,7 @@ Public GitHub repository: [alexanderpi007/unflat-agents](https://github.com/alex
 
 Deployed dapp: https://unflat-agents.vercel.app
 
-The gateway creates a Privy agent wallet and an ENSv2 identity, enforces a short-lived spending mandate through Arkiv's live TTL query surface, makes guarded Base USDC payments, asks AIMorgan for advisory strategy, sweeps idle USDC to an unflat allowlisted Morpho vault, and publishes an owner-encrypted statement to Swarm.
+The gateway creates a Privy agent wallet and an ENSv2 identity, enforces a short-lived spending mandate through Arkiv's live TTL query surface, makes guarded Base USDC payments, asks AIMorgan for advisory strategy, and sweeps idle USDC to an unflat allowlisted Morpho vault. The owner publishes the statement to Swarm with native encryption through browser-side Swarm ID.
 
 ## Demo
 
@@ -17,23 +17,55 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000` and click **Run the 2-minute mandate**.
+Open `http://localhost:3000` and click **Run MOCK money · real Arkiv**. Set the funded `ARKIV_PRIVATE_KEY` in `.env`; the public deployment uses the same testnet-backed path.
 
-The dashboard runs an accelerated mock sequence with runtime-generated timestamps and no credentials or external availability:
+The dashboard streams each step with runtime timestamps and a real 60-block (nominally two-minute) Arkiv lifetime:
 
-1. create `atlas.agents.unflat.eth` and a Privy agent wallet;
+1. reuse the displayed persistent wallet `0xe35285DDaBDD0d0C2F70F4067f7E06341E8a44e7`; no new Privy wallet is created;
 2. grant a two-minute mandate;
 3. transfer 0.05 USDC through the same mandate and signing gateway;
 4. call AIMorgan `/api/strategize` with `dry: true`, then `?free=true`;
 5. deposit exactly 1 USDC into the unflat allowlisted Morpho vault through the mocked direct path;
-6. advance past expiry and show the next action as `REFUSED`;
-7. encrypt the statement with an owner-held AES-256-GCM key and publish the ciphertext.
+6. wait for the uncached Arkiv query to become empty, attempt the next action and show `EXPIRED` and `REFUSED`;
+7. connect Swarm ID in OWNER RECORD, then publish the statement with native encryption to the owner's drive.
+
+Deployed Swarm storage and the mocked agent sequence are labelled separately. The owner keeps the full 128-hex encrypted reference; it never reaches the gateway. Retrieve it from a fresh browser session without running the demo again. See [Swarm setup and click steps](./swarm/README.md).
 
 The fully mocked safety-net sequence runs in a terminal:
 
 ```bash
 npm run demo:mock
 ```
+
+On localhost only, **Run LIVE (Base mainnet)** displays the exact configured recipient/vault and requires typing **CONFIRM**. It reuses the wallet ID in the local persistent store, transfers 0.05 USDC, approves/deposits 1.00 USDC through Privy, and waits for the real Arkiv expiry/refusal. Total: 1.05 USDC plus gas. The LIVE button never renders on Vercel; the backend rejects deployed or non-loopback requests even if Host is spoofed. Do not expose the local server through a tunnel. A confirmation is spending consent, not production owner authentication.
+
+## What is live vs mock
+
+| Component | Public / MOCK money dashboard | Local LIVE dashboard | `demo:mock` |
+|---|---|---|---|
+| Wallet | Persistent address displayed; no provisioning/signing | Existing Privy wallet ID from private store | Isolated simulated wallet |
+| 0.05 USDC transfer + 1 USDC deposit | Simulated, no BaseScan proof links | Real Base transactions, gated and confirmed | Simulated |
+| Arkiv mandate | Real Tiramisu creation, uncached query, natural expiry | Same real TTL/query checks | Simulated, accelerated |
+| AIMorgan | Simulated strategy/validation | External dry then fee-waived strategy; validation required | Simulated |
+| APY card | Read-only Morpho API, or explicitly unavailable | Same source | No invented APY |
+| Swarm ID | Real owner-selected drive after browser connection | Same | Simulated CLI storage |
+| ENS | Mock identity display; bounty in progress | Mock unless registrar configured | Mock |
+
+`MOCK_MODE=true` means **mock money**, not mock Arkiv. Missing Arkiv configuration refuses the dashboard run rather than fabricating an entity. Each public run uses an isolated agent/session ID and in-memory accounting with the same displayed wallet; no local record authorizes an action without Arkiv. The public demo consumes testnet gas and depends on the funded creator key/network. It is a hackathon demo, not an authenticated multi-tenant financial service.
+
+## Three live proofs
+
+1. **Base mainnet (historical live run):** [0.05 USDC transfer](https://basescan.org/tx/0xb082890bd85d47e8488b0bc268f04a3cd6ce5636a223f300192e033ff36a7c12), [exact approval](https://basescan.org/tx/0x655042d61c625741c24c97588b9af62113c171b0a692d9c4b3684eee1a1a0e6b), [1 USDC Morpho deposit](https://basescan.org/tx/0x3d82d0a3e51fc99655736a02831a2a93599c2628ea58888a6de427202afd313f). Recorded shares: `0.961330596878870251`. These are not the synthetic hashes in the Swarm mock-statement proof.
+2. **Arkiv:** [entity and natural-expiration proof](https://tiramisu.explorer.arkiv.network/entity/0xab606272c6fffe0338e5dfd0cb56e55d8233978499607f1483938d597d12582f), found at block 349722, empty at 349784; gateway refused without delete/extend. See [Mission 02 evidence](./arkiv/submission.md).
+3. **Swarm:** owner verified a 5,582-byte mock-demo statement uploaded with native encryption + deferred mode and retrieved as matching plaintext, with approximately four-day drive TTL. See [retrieval evidence and reproduction](./swarm/README.md). The owner-held secret reference is never committed or sent to the gateway.
+
+## Swarm bounty — browser identity and owner storage
+
+Swarm ID supplies the trusted popup/proxy iframe, owner drive postage, native encryption and retrieval. Live round-trip verified by the owner; no Bee node or server postage configuration is required. [Implementation and evidence](./swarm/README.md).
+
+## ENS bounty — in progress
+
+The dashboard identity is currently mocked. ENSv2 beta on Sepolia under `agents.unflat.eth` requires a working registrar integration and independent resolution proof before claiming completion. No live ENS registration is claimed.
 
 ## Mission completed: Mission 02 — Built to expire
 
@@ -120,8 +152,8 @@ npm run mcp        # stdio MCP adapter (gateway must be running)
 | `POST` | `/api/actions/strategize` | Dry, then fee-waived or flagged x402 AIMorgan strategize |
 | `POST` | `/api/actions/sweep` | Sweep by trusted server-side strategy ID |
 | `GET` | `/api/agents/:agentId` | Agent, mandate, and readable statement events |
-| `POST` | `/api/statements` | Owner-key encryption and Swarm upload |
-| `POST` | `/api/demo` | Isolated accelerated demo run |
+| `POST` | `/api/statements` | Returns JSON 409 directing publication to the owner's browser; accepts no reference/key |
+| `POST` | `/api/demo` | NDJSON streaming mock-money/real-Arkiv run, or confirmed localhost-only LIVE run |
 | `GET` | `/api/vault` | Live Morpho API APY or an unavailable marker in mock mode |
 | `GET` | `/api/health` | Per-adapter live/mock mode and reason |
 
@@ -146,7 +178,7 @@ Tools: `create_agent`, `grant_mandate`, `pay_x402`, `transfer_usdc`, `strategize
 
 ## Adapter modes
 
-Copy `.env.example` to `.env`. `MOCK_MODE=true` is the global all-mock override. With `MOCK_MODE=false` or unset, each adapter independently becomes live only when its complete configuration is present; otherwise that adapter uses a clearly labelled mock. Missing or malformed configuration never crashes module evaluation.
+Copy `.env.example` to `.env`. `MOCK_MODE=true` mocks financial actions; configured Arkiv, read-only Morpho APY and browser Swarm remain live. `demo:mock` explicitly forces all mocks. Local LIVE dashboard execution requires complete Privy/AIMorgan/Arkiv configuration and rejects any financial mock fallback. Vercel forces mock money regardless of environment values. Missing or malformed configuration never crashes module evaluation.
 
 Live mode atomically persists private mandate terms, commitment openings, accounting and idempotency state at `GATEWAY_STORE_PATH` (default `.data/gateway.json`, permissions `0600`). Arkiv's uncached live query is the authorization source; local presence or timestamps cannot make an expired entity valid. Point the store at durable storage for deployment; mock and scripted demo runs remain isolated in memory.
 
@@ -155,7 +187,7 @@ Live adapters use:
 - Privy Node's wallet-backed x402 client and `eth_sendTransaction` for Base USDC approvals, transfers, and direct Morpho deposits; the Privy Earn API remains available behind `EARN_VIA_PRIVY=true`;
 - Arkiv SDK `0.8.0` on Tiramisu (`eip155:7738577`), with a two-minute entity TTL and a fresh `$expiresAt` query before every signing-capable action;
 - viem on Base for independent transfer gas checks and Earn vault asset/balance checks, and on Sepolia to verify ENSv2 resolution;
-- a hosted Swarm upload endpoint; no local Bee node is required;
+- browser-side Swarm ID for native encrypted uploads/downloads using the owner's drive; no server postage configuration;
 - AIMorgan at fixed origin `https://aimorgan.net`, treated as fail-closed advisory input; it needs no credentials. Its x402 path is disabled unless `AIMORGAN_X402=true`.
 
 `UNFLAT_VAULT_ALLOWLIST` is a JSON array of `{ id, address, label, execution }`. `execution` is `direct-morpho` for the underlying vault or `privy-earn-api` for Privy's fee wrapper. AIMorgan cannot select or modify this list.
@@ -166,7 +198,7 @@ The dashboard does not embed an illustrative rate. It reads the allowlisted Vaul
 
 ## Arkiv: built to expire
 
-The public mandate entity has an empty payload and only `agent_id`, `expiry`, and a `bytes32` keccak256 commitment. Raw caps, action scope and the random commitment secret stay in the private unflat store and owner-encrypted statement. The gateway queries by `agent_id`, `$expiresAt > current head`, and immutable `$creator`; after Arkiv TTL removes the entity, absence itself causes refusal. See [arkiv/schema.md](./arkiv/schema.md) and the reproducible [friction log](./arkiv/friction.md).
+The public mandate entity has an empty payload and only `agent_id`, `expiry`, and a `bytes32` keccak256 commitment. Raw caps, action scope and the random commitment secret stay in the private unflat store. The browser statement includes displayed mandate terms, but not the private commitment opening. The gateway queries by `agent_id`, `$expiresAt > current head`, and immutable `$creator`; after Arkiv TTL removes the entity, absence itself causes refusal. See [arkiv/schema.md](./arkiv/schema.md) and the reproducible [friction log](./arkiv/friction.md).
 
 ## Source policy
 

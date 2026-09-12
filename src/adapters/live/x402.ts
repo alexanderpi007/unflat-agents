@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { decodePaymentRequiredHeader } from "@x402/core/http";
-import type { PaymentRequired, PaymentRequirements } from "@x402/core/types";
+import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
+import type { PaymentRequired, PaymentRequirements, SettleResponse } from "@x402/core/types";
+import { isAddress } from "viem";
 import type { X402Port } from "@/core/ports";
-import type { HexAddress, SignedPayment } from "@/core/types";
+import type { HexAddress, HexHash, SignedPayment } from "@/core/types";
+
+const baseUsdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 function atomicToCents(value: string): number {
   const atomic = BigInt(value);
-  return Number((atomic + 9_999n) / 10_000n);
+  if (atomic <= 0n || atomic % 10_000n !== 0n) {
+    throw new Error("x402 USDC amount must be positive and use exact cent precision.");
+  }
+  const cents = Number(atomic / 10_000n);
+  if (!Number.isSafeInteger(cents)) throw new Error("x402 USDC amount exceeds the safe mandate range.");
+  return cents;
 }
 
 function amountOf(requirement: PaymentRequirements): string {
@@ -36,12 +44,19 @@ export class HttpX402Adapter implements X402Port {
     const accepted = paymentRequired.accepts.find((option) => String(option.network) === "eip155:8453");
     if (!accepted) throw new Error("Resource did not offer an x402 Base mainnet payment option.");
     if (accepted.scheme !== "exact") throw new Error("Only the exact x402 payment scheme is supported.");
+    if (String(accepted.asset).toLowerCase() !== baseUsdc.toLowerCase()) {
+      throw new Error("Only canonical Base USDC is accepted for x402 payments.");
+    }
+    if (!isAddress(accepted.payTo)) throw new Error("x402 payment recipient is not a valid EVM address.");
+    const amountAtomic = amountOf(accepted);
 
     return {
       resource,
       payTo: accepted.payTo as HexAddress,
+      asset: accepted.asset as HexAddress,
       network: "eip155:8453" as const,
-      amountUsdcCents: atomicToCents(amountOf(accepted)),
+      amountAtomic,
+      amountUsdcCents: atomicToCents(amountAtomic),
       nonce: randomUUID(),
       method: request.method,
       body: request.body,
@@ -60,9 +75,17 @@ export class HttpX402Adapter implements X402Port {
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) throw new Error(`Paid x402 request failed with HTTP ${response.status}.`);
+    const header = response.headers.get("PAYMENT-RESPONSE") ?? response.headers.get("X-PAYMENT-RESPONSE");
+    if (!header) throw new Error("Paid x402 response did not include a settlement receipt.");
+    const settlement = decodePaymentResponseHeader(header) as SettleResponse;
+    if (settlement.success !== true) throw new Error(`x402 settlement failed: ${settlement.errorReason ?? "unknown reason"}.`);
+    if (settlement.network !== "eip155:8453") throw new Error(`x402 settled on unexpected network ${settlement.network}.`);
+    if (!/^0x[0-9a-fA-F]{64}$/.test(settlement.transaction)) {
+      throw new Error("x402 settlement receipt did not contain a Base transaction hash.");
+    }
     return {
-      settlementId:
-        response.headers.get("PAYMENT-RESPONSE") ?? response.headers.get("x-request-id") ?? randomUUID(),
+      transactionHash: settlement.transaction as HexHash,
+      network: "eip155:8453" as const,
     };
   }
 }

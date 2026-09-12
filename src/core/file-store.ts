@@ -3,11 +3,19 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { IdempotencyError } from "./errors";
 import type { GatewayStore } from "./ports";
-import type { Agent, Mandate, StatementEvent, StoredIdempotency, Strategy } from "./types";
+import type {
+  Agent,
+  Mandate,
+  MandateCommitmentOpening,
+  StatementEvent,
+  StoredIdempotency,
+  Strategy,
+} from "./types";
 
 interface StoreState {
   agents: Record<string, Agent>;
   mandates: Record<string, Mandate>;
+  mandateOpenings: Record<string, MandateCommitmentOpening>;
   events: StatementEvent[];
   strategies: Record<string, Strategy>;
   idempotency: Record<string, StoredIdempotency>;
@@ -16,6 +24,7 @@ interface StoreState {
 const emptyState = (): StoreState => ({
   agents: {},
   mandates: {},
+  mandateOpenings: {},
   events: [],
   strategies: {},
   idempotency: {},
@@ -42,7 +51,12 @@ export class FileGatewayStore implements GatewayStore {
 
   private async read(): Promise<StoreState> {
     try {
-      return JSON.parse(await readFile(this.filePath, "utf8")) as StoreState;
+      const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<StoreState>;
+      return {
+        ...emptyState(),
+        ...parsed,
+        mandateOpenings: parsed.mandateOpenings ?? {},
+      };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyState();
       throw error;
@@ -84,6 +98,14 @@ export class FileGatewayStore implements GatewayStore {
 
   async getMandate(agentId: string): Promise<Mandate | undefined> {
     return this.inspect((state) => state.mandates[agentId]);
+  }
+
+  async putMandateOpening(opening: MandateCommitmentOpening): Promise<void> {
+    await this.mutate((state) => { state.mandateOpenings[opening.mandateId] = opening; });
+  }
+
+  async getMandateOpening(mandateId: string): Promise<MandateCommitmentOpening | undefined> {
+    return this.inspect((state) => state.mandateOpenings[mandateId]);
   }
 
   async updateMandate(agentId: string, update: (mandate: Mandate) => Mandate): Promise<Mandate | undefined> {
@@ -141,4 +163,3 @@ export class FileGatewayStore implements GatewayStore {
     });
   }
 }
-

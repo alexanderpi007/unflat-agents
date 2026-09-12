@@ -1,12 +1,17 @@
 import { randomBytes, webcrypto } from "node:crypto";
-import type { Agent, Mandate, StatementEvent } from "./types";
+import type { Agent, Mandate, MandateCommitmentOpening, StatementEvent } from "./types";
 
 export function createOwnerStatementKey(): string {
   return randomBytes(32).toString("base64url");
 }
 
 export async function encryptStatement(
-  statement: { agent: Agent; mandate: Mandate; events: StatementEvent[] },
+  statement: {
+    agent: Agent;
+    mandate: Mandate;
+    commitmentOpening?: MandateCommitmentOpening;
+    events: StatementEvent[];
+  },
   ownerKey: string,
 ): Promise<Uint8Array> {
   const rawKey = Buffer.from(ownerKey, "base64url");
@@ -24,4 +29,3 @@ export async function encryptStatement(
   });
   return new TextEncoder().encode(envelope);
 }
-

@@ -1,13 +1,25 @@
 import type {
   Agent,
+  ArkivMandateEntity,
+  ArkivMandatePublication,
+  ArkivMandateQuery,
+  DirectVaultDepositResult,
+  DirectVaultTransaction,
   HexAddress,
   Mandate,
+  MandateCommitmentOpening,
   PriceValidation,
+  EarnDepositResult,
+  EarnVaultRate,
   SignedPayment,
   StatementEvent,
   StoredIdempotency,
   Strategy,
+  UsdcBalance,
+  UsdcTransferResult,
+  VaultConfig,
   X402Quote,
+  X402Settlement,
 } from "./types";
 
 export interface Clock {
@@ -19,6 +31,8 @@ export interface GatewayStore {
   getAgent(agentId: string): Promise<Agent | undefined>;
   putMandate(mandate: Mandate): Promise<void>;
   getMandate(agentId: string): Promise<Mandate | undefined>;
+  putMandateOpening(opening: MandateCommitmentOpening): Promise<void>;
+  getMandateOpening(mandateId: string): Promise<MandateCommitmentOpening | undefined>;
   updateMandate(agentId: string, update: (mandate: Mandate) => Mandate): Promise<Mandate | undefined>;
   appendEvent(event: StatementEvent): Promise<void>;
   listEvents(agentId: string): Promise<StatementEvent[]>;
@@ -34,13 +48,39 @@ export interface GatewayStore {
 
 export interface WalletPort {
   createWallet(): Promise<{ walletId: string; address: HexAddress }>;
+  verifyPrivyEarnVault(vault: VaultConfig): Promise<void>;
   signX402(walletId: string, quote: X402Quote): Promise<SignedPayment>;
+  transferUsdc(input: {
+    walletId: string;
+    recipient: HexAddress;
+    amountUsdcCents: number;
+    idempotencyKey: string;
+  }): Promise<UsdcTransferResult>;
   depositEarn(input: {
     walletId: string;
     vaultId: string;
+    vaultAddress: HexAddress;
     amountUsdcCents: number;
     idempotencyKey: string;
-  }): Promise<{ actionId: string; status: string }>;
+  }): Promise<EarnDepositResult>;
+  approveUsdc(input: {
+    walletId: string;
+    walletAddress: HexAddress;
+    spender: HexAddress;
+    amountUsdcCents: number;
+    idempotencyKey: string;
+  }): Promise<DirectVaultTransaction>;
+  depositDirectVault(input: {
+    walletId: string;
+    walletAddress: HexAddress;
+    vaultAddress: HexAddress;
+    amountUsdcCents: number;
+    idempotencyKey: string;
+  }): Promise<DirectVaultDepositResult>;
+}
+
+export interface VaultRatePort {
+  getRate(vault: VaultConfig): Promise<EarnVaultRate>;
 }
 
 export interface EnsPort {
@@ -48,12 +88,13 @@ export interface EnsPort {
 }
 
 export interface ArkivPort {
-  publishMandate(mandate: Mandate): Promise<{ entityKey: string }>;
+  publishMandate(mandate: ArkivMandatePublication): Promise<ArkivMandateEntity>;
+  findValidMandates(agentId: string): Promise<ArkivMandateQuery>;
 }
 
 export interface X402Port {
   quote(resource: string, request?: { method: "GET" | "POST"; body?: unknown }): Promise<X402Quote>;
-  submit(payment: SignedPayment): Promise<{ settlementId: string }>;
+  submit(payment: SignedPayment): Promise<X402Settlement>;
 }
 
 export interface AiMorganPort {
@@ -63,15 +104,40 @@ export interface AiMorganPort {
     totalUsdcCents: number;
     dry: boolean;
     payment?: SignedPayment;
+    feeWaived?: boolean;
   }): Promise<Strategy>;
 }
 
 export interface PreflightPort {
+  getUsdcBalance(walletAddress: HexAddress): Promise<UsdcBalance>;
+  verifyUsdcTransfer(input: {
+    walletAddress: HexAddress;
+    recipient: HexAddress;
+    amountUsdcCents: number;
+  }): Promise<{ allPassed: boolean; reason: string; gasEstimate: string }>;
   verifyEarn(input: {
     walletAddress: HexAddress;
     vaultAddress: HexAddress;
     amountUsdcCents: number;
-  }): Promise<{ allPassed: boolean; reason: string; gasEstimate: string; allowanceOk: boolean }>;
+    execution: "privy-earn-api" | "direct-morpho";
+  }): Promise<{
+    allPassed: boolean;
+    reason: string;
+    assetAddress?: HexAddress;
+    balanceRawAmount?: string;
+    allowanceRawAmount?: string;
+    approvalTransactionHash?: `0x${string}`;
+    execution: "privy-earn-api" | "direct-morpho";
+  }>;
+  simulateDirectDeposit(input: {
+    walletAddress: HexAddress;
+    vaultAddress: HexAddress;
+    amountUsdcCents: number;
+  }): Promise<{
+    allPassed: boolean;
+    reason: string;
+    simulatedSharesRaw?: string;
+  }>;
 }
 
 export interface StatementStoragePort {
@@ -87,6 +153,10 @@ export interface Dependencies {
   x402: X402Port;
   aiMorgan: AiMorganPort;
   preflight: PreflightPort;
+  vaultRate: VaultRatePort;
   statementStorage: StatementStoragePort;
-  vaultAllowlist: Array<{ id: string; address: HexAddress; label: string }>;
+  vaultAllowlist: VaultConfig[];
+  earnViaPrivy: boolean;
+  aiMorganX402: boolean;
+  demoPaymentRecipient?: HexAddress;
 }

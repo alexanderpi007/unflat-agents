@@ -7,7 +7,7 @@ const gatewayUrl = process.env.UNFLAT_GATEWAY_URL ?? "http://localhost:3000";
 async function call(path: string, method: "GET" | "POST", body?: unknown) {
   const response = await fetch(`${gatewayUrl}${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: body ? { "content-type": "application/json", origin: new URL(gatewayUrl).origin } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const result = await response.json();
@@ -33,7 +33,7 @@ server.registerTool(
 server.registerTool(
   "grant_mandate",
   {
-    description: "Grant an expiring spending mandate held in the unflat gateway store.",
+    description: "Grant a spending mandate whose live authorization exists only while its Arkiv TTL entity is queryable.",
     inputSchema: {
       agentId: z.string().uuid(),
       ownerId: z.string().min(1),
@@ -59,9 +59,23 @@ server.registerTool(
 );
 
 server.registerTool(
+  "transfer_usdc",
+  {
+    description: "Transfer canonical Base USDC to the configured demo recipient through the mandate and validation gate.",
+    inputSchema: {
+      agentId: z.string().uuid(),
+      recipient: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+      amountUsdcCents: z.number().int().positive(),
+      idempotencyKey: z.string().min(8),
+    },
+  },
+  async (input) => result(await call("/api/actions/transfer", "POST", input)),
+);
+
+server.registerTool(
   "strategize",
   {
-    description: "Run AIMorgan dry strategize first, then the paid REST call through the gateway.",
+    description: "Run AIMorgan dry strategize first, then the fee-waived call unless AIMORGAN_X402=true.",
     inputSchema: {
       agentId: z.string().uuid(),
       totalUsdcCents: z.number().int().positive(),
@@ -96,4 +110,3 @@ server.registerTool(
 );
 
 await server.connect(new StdioServerTransport());
-

@@ -1,5 +1,7 @@
 import type { AiMorganPort } from "@/core/ports";
-import type { HexAddress, PriceValidation, SignedPayment, Strategy, X402Quote } from "@/core/types";
+import { decodePaymentResponseHeader } from "@x402/core/http";
+import type { SettleResponse } from "@x402/core/types";
+import type { HexAddress, HexHash, PriceValidation, SignedPayment, Strategy, X402Quote } from "@/core/types";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,10 +26,20 @@ function priceValidation(value: unknown): PriceValidation | undefined {
   };
 }
 
+function usdcCents(value: unknown): number | undefined {
+  if (typeof value !== "string" || !/^\$\d+(?:\.\d{1,2})?$/.test(value)) return undefined;
+  const cents = Math.round(Number(value.slice(1)) * 100);
+  return Number.isSafeInteger(cents) ? cents : undefined;
+}
+
 function strategyFrom(value: unknown): Strategy {
   const outer = record(value);
   const data = Object.keys(record(outer.strategy)).length ? record(outer.strategy) : outer;
-  const validation = priceValidation(data.priceValidation ?? outer.priceValidation);
+  const declaredFee = usdcCents(record(outer.x402).price);
+  const parsedValidation = priceValidation(data.priceValidation ?? outer.priceValidation);
+  const validation = parsedValidation && declaredFee != null
+    ? { ...parsedValidation, quotedUsdcCents: declaredFee }
+    : parsedValidation;
   return {
     id: String(data.id ?? outer.correlation_id ?? crypto.randomUUID()),
     summary: String(data.summary ?? data.rationale ?? "AIMorgan strategy received."),
@@ -36,6 +48,21 @@ function strategyFrom(value: unknown): Strategy {
       ? data.vaults.map((vault) => String(record(vault).id ?? record(vault).vault_id ?? "unknown"))
       : [],
     priceValidation: validation,
+  };
+}
+
+function settlementFrom(response: Response) {
+  const header = response.headers.get("PAYMENT-RESPONSE") ?? response.headers.get("X-PAYMENT-RESPONSE");
+  if (!header) throw new Error("Paid AIMorgan response did not include an x402 settlement receipt.");
+  const settlement = decodePaymentResponseHeader(header) as SettleResponse;
+  if (settlement.success !== true) throw new Error(`AIMorgan x402 settlement failed: ${settlement.errorReason ?? "unknown reason"}.`);
+  if (settlement.network !== "eip155:8453") throw new Error(`AIMorgan settled on unexpected network ${settlement.network}.`);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(settlement.transaction)) {
+    throw new Error("AIMorgan x402 receipt did not contain a Base transaction hash.");
+  }
+  return {
+    transactionHash: settlement.transaction as HexHash,
+    network: "eip155:8453" as const,
   };
 }
 
@@ -83,8 +110,11 @@ export class AiMorganRestAdapter implements AiMorganPort {
     totalUsdcCents: number;
     dry: boolean;
     payment?: SignedPayment;
+    feeWaived?: boolean;
   }): Promise<Strategy> {
-    const response = await fetch(`${this.baseUrl}/api/strategize`, {
+    if (input.payment && input.feeWaived) throw new Error("AIMorgan request cannot be both x402-paid and fee-waived.");
+    const endpoint = input.feeWaived ? `${this.baseUrl}/api/strategize?free=true` : `${this.baseUrl}/api/strategize`;
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -99,8 +129,12 @@ export class AiMorganRestAdapter implements AiMorganPort {
       }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) throw new Error(`AIMorgan strategize failed with HTTP ${response.status}.`);
-    return strategyFrom(await response.json());
+    if (!response.ok) {
+      const detail = (await response.text()).replace(/\s+/g, " ").trim().slice(0, 500);
+      throw new Error(`AIMorgan strategize failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
+    }
+    const strategy = strategyFrom(await response.json());
+    if (input.payment) return { ...strategy, aimorganFeeMode: "x402", x402Settlement: settlementFrom(response) };
+    return input.feeWaived ? { ...strategy, aimorganFeeMode: "waived" } : strategy;
   }
 }
-

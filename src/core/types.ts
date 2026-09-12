@@ -1,6 +1,7 @@
-export type ActionKind = "x402.pay" | "aimorgan.strategize" | "earn.sweep";
+export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | "earn.sweep";
 
 export type HexAddress = `0x${string}`;
+export type HexHash = `0x${string}`;
 
 export interface Agent {
   id: string;
@@ -22,7 +23,46 @@ export interface Mandate {
   startsAt: string;
   expiresAt: string;
   createdAt: string;
-  arkivEntityKey?: string;
+  arkivEntityKey?: HexHash;
+  arkivTransactionHash?: HexHash;
+  arkivExplorerUrl?: string;
+  arkivExpiresAtBlock?: string;
+  arkivCommitment?: HexHash;
+}
+
+export interface MandateCommitmentOpening {
+  mandateId: string;
+  agentId: string;
+  maxTotalUsdcCents: number;
+  maxPerActionUsdcCents: number;
+  secret: HexHash;
+  commitment: HexHash;
+}
+
+export interface ArkivMandatePublication {
+  agentId: string;
+  expiry: string;
+  commitment: HexHash;
+  durationSeconds: number;
+}
+
+export interface ArkivMandateEntity {
+  entityKey: HexHash;
+  transactionHash?: HexHash;
+  explorerUrl: string;
+  transactionExplorerUrl?: string;
+  agentId: string;
+  expiry: string;
+  commitment: HexHash;
+  expiresAtBlock: string;
+}
+
+export interface ArkivMandateQuery {
+  agentId: string;
+  found: boolean;
+  blockNumber: string;
+  query: string;
+  entities: ArkivMandateEntity[];
 }
 
 export interface MandateDecision {
@@ -45,12 +85,16 @@ export interface Strategy {
   idleFundsUsdcCents: number;
   advisoryVaultIds: string[];
   priceValidation?: PriceValidation;
+  x402Settlement?: X402Settlement;
+  aimorganFeeMode?: "x402" | "waived";
 }
 
 export interface X402Quote {
   resource: string;
   payTo: HexAddress;
+  asset: HexAddress;
   network: "eip155:8453";
+  amountAtomic: string;
   amountUsdcCents: number;
   nonce: string;
   method?: "GET" | "POST";
@@ -61,6 +105,92 @@ export interface X402Quote {
 export interface SignedPayment {
   signature: string;
   quote: X402Quote;
+}
+
+export interface X402Settlement {
+  transactionHash: HexHash;
+  network: "eip155:8453";
+}
+
+export type X402QuoteConfirmation = Pick<
+  X402Quote,
+  "resource" | "payTo" | "asset" | "network" | "amountAtomic" | "amountUsdcCents" | "method"
+>;
+
+export interface EarnDepositResult {
+  mode: "privy-earn";
+  actionId: string;
+  status: "succeeded";
+  transactionHashes: HexHash[];
+}
+
+export interface DirectVaultTransaction {
+  transactionHash: HexHash;
+  explorerUrl: string;
+}
+
+export interface DirectVaultDepositResult {
+  transactionHash: HexHash;
+  explorerUrl: string;
+  sharesReceived: string;
+  sharesReceivedRaw: string;
+  shareDecimals: number;
+}
+
+export interface DirectEarnDepositResult {
+  mode: "direct-morpho";
+  status: "succeeded";
+  transactionHashes: HexHash[];
+  approval: DirectVaultTransaction;
+  deposit: DirectVaultTransaction;
+  sharesReceived: string;
+  sharesReceivedRaw: string;
+  shareDecimals: number;
+}
+
+export interface UsdcTransferResult {
+  transactionHash: HexHash;
+  network: "eip155:8453";
+  source: "privy-live" | "mock";
+  explorerUrl?: string;
+}
+
+export interface UsdcBalance {
+  rawAmount: string;
+  amountUsdcCents: number;
+}
+
+export interface EarnVaultRate {
+  apyBasisPoints: number | null;
+  provider: string;
+  source: "morpho-api" | "mock-unavailable";
+  detail: string;
+  asOf: string;
+}
+
+export type EarnExecution = "privy-earn-api" | "direct-morpho";
+
+export interface VaultConfig {
+  id: string;
+  address: HexAddress;
+  label: string;
+  execution: EarnExecution;
+}
+
+export interface AdapterHealth {
+  mode: "live" | "mock" | "browser";
+  detail: string;
+}
+
+export interface RuntimeHealth {
+  globalMockOverride: boolean;
+  adapters: {
+    privy: AdapterHealth;
+    aiMorgan: AdapterHealth;
+    arkiv: AdapterHealth;
+    swarm: AdapterHealth;
+    ens: AdapterHealth;
+  };
 }
 
 export interface StatementEvent {
@@ -86,6 +216,6 @@ export interface DemoSnapshot {
   agent: Agent;
   mandate: Mandate;
   events: StatementEvent[];
-  statementReference: string;
-  ownerStatementKey: string;
+  statementReference?: string;
+  ownerStatementKey?: string;
 }

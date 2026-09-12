@@ -6,7 +6,7 @@
 - Refuse unless AIMorgan returned `priceValidation.allPassed === true`.
 - AIMorgan is an external advisory service. Never vendor its code or trust its stored state or vault selection.
 - Call AIMorgan strategize with `dry: true` before the paid REST call. Never use AIMorgan's MCP or `?free=true` path for a demo payment.
-- Deposit only through Privy Earn to `UNFLAT_VAULT_ALLOWLIST`, after independent gas and allowance checks.
+- Deposit only to `UNFLAT_VAULT_ALLOWLIST`: direct Morpho uses exact approval plus `eth_call` simulation, while Privy Earn remains behind `EARN_VIA_PRIVY=true`.
 - Mandates, trusted strategies, and idempotency records belong in the unflat store.
 - Every decision must include a human-readable reason suitable for the statement and dashboard.
 - Do not add secrets or secret defaults. Use `.env`, which must remain ignored.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runtime } from "@/server/runtime";
-import { RefusalError } from "@/core/errors";
+import { apiFailure, invalidRequest } from "@/app/api/responses";
 
 const schema = z.object({
   agentId: z.string().uuid(),
@@ -10,13 +10,13 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const parsed = schema.safeParse(await request.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   try {
+    try { requireLocalMutation(request); } catch (error) { return apiFailure(error, "Local execution only.", 403); }
+    const parsed = schema.safeParse(await request.json());
+    if (!parsed.success) return invalidRequest(parsed.error.flatten());
     return NextResponse.json(await runtime.gateway.payX402(parsed.data));
   } catch (error) {
-    const status = error instanceof RefusalError ? 403 : 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Payment failed." }, { status });
+    return apiFailure(error, "Payment failed.");
   }
 }
-
+import { requireLocalMutation } from "@/server/local-only";

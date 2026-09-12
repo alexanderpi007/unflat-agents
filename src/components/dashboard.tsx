@@ -1,9 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import type { DemoSnapshot } from "@/core/types";
+import { useEffect, useRef, useState } from "react";
+import { OwnerRecord } from "./owner-record";
+import { DemoControls, type DemoPlan } from "./demo-controls";
+import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
+import { aimorganFeeWaivedLabel, directMorphoLabel } from "@/core/labels";
+import type {
+  Agent,
+  DemoSnapshot,
+  EarnVaultRate,
+  Mandate,
+  RuntimeHealth,
+  StatementEvent,
+  VaultConfig,
+} from "@/core/types";
 
-type DemoResult = { snapshot: DemoSnapshot; steps: string[] };
+type DemoResult = DashboardUpdate;
+type VaultRate = EarnVaultRate & {
+  vault: VaultConfig;
+};
+type LiveState = { agent: Agent; mandate?: Mandate; events: StatementEvent[] };
+
+const adapters = [
+  ["privy", "Privy"],
+  ["aiMorgan", "AIMorgan"],
+  ["arkiv", "Arkiv"],
+  ["swarm", "Swarm"],
+  ["ens", "ENS"],
+] as const;
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const short = (value: string, width = 9) =>
@@ -13,27 +37,108 @@ export function Dashboard() {
   const [result, setResult] = useState<DemoResult>();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [loadedAt, setLoadedAt] = useState("");
+  const [vaultRate, setVaultRate] = useState<VaultRate>();
+  const [vaultRateError, setVaultRateError] = useState(false);
+  const [health, setHealth] = useState<RuntimeHealth>();
+  const [healthError, setHealthError] = useState(false);
+  const [liveState, setLiveState] = useState<LiveState>();
+  const [localLiveAvailable, setLocalLiveAvailable] = useState(false);
+  const [plan, setPlan] = useState<DemoPlan>();
+  const [walletAddress, setWalletAddress] = useState("");
+  const runLock = useRef(false);
 
-  async function run() {
+  useEffect(() => {
+    setLoadedAt(new Date().toISOString());
+    let active = true;
+    fetch("/api/vault", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Vault rate unavailable.");
+        if (active) setVaultRate(body);
+      })
+      .catch(() => {
+        if (active) setVaultRateError(true);
+      });
+    fetch("/api/health", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Runtime health unavailable.");
+        if (active) setHealth(body);
+      })
+      .catch(() => {
+        if (active) setHealthError(true);
+      });
+    fetch("/api/demo", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Live demo state unavailable.");
+        if (active && body.state) setLiveState(body.state);
+        if (active) {
+          setLocalLiveAvailable(body.localLiveAvailable === true && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname));
+          setPlan(body.plan); setWalletAddress(body.walletAddress ?? "");
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function run(mode: DemoMoney, confirmation?: string) {
+    if (runLock.current) return;
+    runLock.current = true;
     setRunning(true);
     setError("");
+    setResult({ moneyMode: mode, phase: "Preparing real Arkiv mandate…" });
     try {
-      const response = await fetch("/api/demo", { method: "POST" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Demo failed.");
-      setResult(body);
+      const response = await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, confirmation, runId: crypto.randomUUID() }) });
+      if (!response.ok) { const body = await response.json(); throw new Error(`${body.error}: ${body.detail}`); }
+      if (!response.body) throw new Error("Demo stream unavailable.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
+        for (const line of lines.filter(Boolean)) {
+          const update = JSON.parse(line) as DashboardUpdate;
+          setResult(update);
+          if (update.error) throw new Error(`${update.error} ${update.detail}`);
+          finished = update.expired === true;
+        }
+        if (done) break;
+      }
+      if (!finished) throw new Error("Demo connection ended before expiry proof. Inspect the statement before retrying LIVE.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Demo failed.");
     } finally {
       setRunning(false);
+      runLock.current = false;
     }
   }
 
   const snapshot = result?.snapshot;
-  const remaining = snapshot
-    ? snapshot.mandate.maxTotalUsdcCents - snapshot.mandate.spentUsdcCents
-    : 2_000;
-  const refusal = snapshot?.events.findLast((event) => event.status === "refused");
+  const displayedAgent = result ? snapshot?.agent : liveState?.agent;
+  const displayedMandate = result ? snapshot?.mandate : liveState?.mandate;
+  const displayedEvents = result ? snapshot?.events ?? [] : liveState?.events ?? [];
+  const mandateCap = displayedMandate?.maxTotalUsdcCents ?? 105;
+  const remaining = displayedMandate
+    ? displayedMandate.maxTotalUsdcCents - displayedMandate.spentUsdcCents
+    : mandateCap;
+  const refusal = displayedEvents.findLast((event) => event.status === "refused");
+  const mandateExpired = result ? result.expired === true : displayedMandate
+    ? Date.now() >= new Date(displayedMandate.expiresAt).getTime()
+    : false;
+  const liveAdapters = health
+    ? adapters.filter(([key]) => health.adapters[key].mode === "live").map(([, label]) => label)
+    : [];
+  const mockAdapters = health
+    ? adapters.filter(([key]) => health.adapters[key].mode === "mock").map(([, label]) => label)
+    : [];
 
   return (
     <main>
@@ -48,6 +153,16 @@ export function Dashboard() {
         <div className="hack-badge">ETHRome · 40H</div>
       </header>
 
+      <section className="adapter-strip" aria-label="Adapter runtime modes">
+        {health
+          ? adapters.map(([key, label]) => (
+              <span key={key} title={health.adapters[key].detail}>
+                {label}: <b className={health.adapters[key].mode}>{health.adapters[key].mode.toUpperCase()}</b>
+              </span>
+            ))
+          : <span>{healthError ? "Adapter health unavailable" : "Reading adapter modes…"}</span>}
+      </section>
+
       <section className="hero" id="top">
         <div>
           <p className="eyebrow">CONTROL ROOM / AGENT 01</p>
@@ -59,17 +174,20 @@ export function Dashboard() {
         </div>
         <div className="run-panel">
           <div className="run-head">
-            <span>Scripted demo</span>
+            <span>{result ? `${result.moneyMode.toUpperCase()} MONEY · LIVE ARKIV` : "Choose money mode · LIVE ARKIV"}</span>
             <b>02:00</b>
           </div>
           <div className="flow-line">
             <span>CREATE</span><i /><span>PAY</span><i /><span>YIELD</span><i /><span>REFUSE</span>
           </div>
-          <button onClick={run} disabled={running}>
-            <span>{running ? "Running safeguards…" : snapshot ? "Run again" : "Run the 2-minute mandate"}</span>
-            <b>→</b>
-          </button>
-          <small>Mock mode · deterministic · no external dependency</small>
+          <DemoControls run={run} running={running} localLiveAvailable={localLiveAvailable} plan={plan} />
+          {result && <p role="status">{result.phase}{result.query ? ` · Arkiv block ${result.query.blockNumber} · found=${result.query.found}` : ""}</p>}
+          <small>
+            {health?.globalMockOverride
+              ? "Mock money · live Arkiv and browser Swarm ID"
+              : "Per-adapter mode · runtime timestamps"}
+          </small>
+          <small className="fee-waived">{aimorganFeeWaivedLabel}</small>
           {error && <p className="error">{error}</p>}
         </div>
       </section>
@@ -79,11 +197,11 @@ export function Dashboard() {
           <div className="panel-label">AGENT IDENTITY</div>
           <div className="avatar">A<span>01</span></div>
           <div>
-            <h2>{snapshot?.agent.displayName ?? "Atlas"}</h2>
-            <p className="ens">{snapshot?.agent.ensName ?? "atlas.agents.unflat.eth"}</p>
+            <h2>{displayedAgent?.displayName ?? "Atlas"}</h2>
+            <p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p>
           </div>
           <dl>
-            <div><dt>PRIVY WALLET</dt><dd>{snapshot ? short(snapshot.agent.walletAddress) : "0x—"}</dd></div>
+            <div><dt>PERSISTENT PRIVY WALLET</dt><dd title={displayedAgent?.walletAddress ?? walletAddress}>{short(displayedAgent?.walletAddress ?? walletAddress) || "0x—"}</dd></div>
             <div><dt>IDENTITY RAIL</dt><dd>ENSv2 · Sepolia</dd></div>
           </dl>
         </article>
@@ -92,19 +210,24 @@ export function Dashboard() {
           <div className="panel-label">MANDATE BALANCE</div>
           <strong>{money(remaining)}</strong>
           <span>USDC available</span>
-          <div className="meter"><i style={{ width: `${(remaining / 2_000) * 100}%` }} /></div>
+          <div className="meter"><i style={{ width: `${(remaining / mandateCap) * 100}%` }} /></div>
           <div className="balance-foot">
-            <span>Spent {money(snapshot?.mandate.spentUsdcCents ?? 0)}</span>
-            <span>Cap $20.00</span>
+            <span>Spent {money(displayedMandate?.spentUsdcCents ?? 0)}</span>
+            <span>Cap {money(mandateCap)}</span>
           </div>
         </article>
 
-        <article className={`mandate-card panel ${snapshot ? "expired" : "active"}`}>
+        <article className={`mandate-card panel ${mandateExpired ? "expired" : "active"}`}>
           <div className="panel-label">MANDATE STATE</div>
-          <div className="state-line"><i /><strong>{snapshot ? "EXPIRED" : "READY"}</strong></div>
-          <p>{snapshot ? "TTL elapsed naturally" : "Awaiting demo run"}</p>
+          <div className="state-line"><i /><strong>{mandateExpired ? "EXPIRED" : displayedMandate ? "ACTIVE" : "READY"}</strong></div>
+          <p>{mandateExpired ? "Arkiv query empty · TTL elapsed naturally" : displayedMandate ? `Estimated expiry ${new Date(displayedMandate.expiresAt).toLocaleTimeString()} · authorization follows Arkiv blocks` : "Awaiting demo run"}</p>
+          {displayedMandate?.arkivExplorerUrl && (
+            <a href={displayedMandate.arkivExplorerUrl} target="_blank" rel="noreferrer">
+              Arkiv entity {short(displayedMandate.arkivEntityKey ?? "", 7)} ↗
+            </a>
+          )}
           <dl>
-            <div><dt>PER ACTION</dt><dd>$10.00</dd></div>
+            <div><dt>PER ACTION</dt><dd>{money(displayedMandate?.maxPerActionUsdcCents ?? 100)}</dd></div>
             <div><dt>REVOCATION TX</dt><dd>None</dd></div>
           </dl>
         </article>
@@ -123,14 +246,21 @@ export function Dashboard() {
         <article className="timeline panel">
           <div className="section-head">
             <div><span>STATEMENT</span><h3>Every decision, readable.</h3></div>
-            <b>{snapshot?.events.length ?? 0} EVENTS</b>
+            <b>{displayedEvents.length} EVENTS</b>
           </div>
           <div className="events">
-            {(snapshot?.events ?? placeholderEvents).map((event, index) => (
+            {(displayedEvents.length ? displayedEvents : placeholderEvents(loadedAt)).map((event) => (
               <div className="event" key={event.id}>
-                <time>{new Date(event.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" })}</time>
+                <time>{event.at ? new Date(event.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" }) : "--:--:--"}</time>
                 <i className={event.status} />
-                <div><strong>{event.action}</strong><p>{event.reason}</p></div>
+                <div>
+                  <strong>{event.action}</strong><p>{event.reason}</p>
+                  {result?.moneyMode !== "mock" && /^0x[0-9a-fA-F]{64}$/.test(event.reference ?? "") && (
+                    <a href={`https://basescan.org/tx/${event.reference}`} target="_blank" rel="noreferrer">
+                      {short(event.reference!, 10)} · BaseScan ↗
+                    </a>
+                  )}
+                </div>
                 <span>{event.amountUsdcCents ? money(event.amountUsdcCents) : "—"}</span>
               </div>
             ))}
@@ -140,35 +270,45 @@ export function Dashboard() {
         <aside className="security-stack">
           <article className="rail-card panel">
             <div className="section-head"><div><span>YIELD RAIL</span><h3>Idle cash, working.</h3></div><b>BASE</b></div>
-            <p className="yield">5.2<sup>%</sup></p>
-            <small>Illustrative vault APY</small>
-            <div className="vault"><i>UF</i><div><strong>unflat USDC</strong><span>Morpho · via Privy Earn</span></div><b>ALLOWLISTED</b></div>
+            <p className="yield">
+              {vaultRate?.apyBasisPoints == null ? "—" : (vaultRate.apyBasisPoints / 100).toFixed(2)}
+              {vaultRate?.apyBasisPoints != null && <sup>%</sup>}
+            </p>
+            <small>
+              {vaultRateError
+                ? "Vault APY unavailable — no fallback substituted"
+                : vaultRate?.source === "morpho-api"
+                  ? `Live realized six-hour average APY · ${vaultRate.provider} API`
+                  : vaultRate?.source === "mock-unavailable"
+                    ? "MOCK — live Morpho APY unavailable; no number substituted"
+                    : "Reading allowlisted Morpho vault…"}
+            </small>
+            <div className="vault"><i>UF</i><div><strong>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}</strong><span>{vaultRate?.vault.execution === "privy-earn-api" ? "Morpho · via Privy Earn API" : directMorphoLabel}</span></div><b>ALLOWLISTED</b></div>
             <p className="advisory">AIMorgan recommends. unflat decides where real funds go.</p>
           </article>
 
-          <article className="statement-card panel">
-            <div className="section-head"><div><span>OWNER RECORD</span><h3>Encrypted on Swarm.</h3></div><b>AES-256</b></div>
-            <label>SWARM REFERENCE</label>
-            <code>{snapshot ? short(snapshot.statementReference, 12) : "Generated after the run"}</code>
-            <label>DECRYPTION KEY</label>
-            <code>{snapshot ? short(snapshot.ownerStatementKey, 12) : "Held by owner only"}</code>
-            <p>The gateway never persists the key.</p>
-          </article>
+          <OwnerRecord statement={displayedAgent && displayedMandate ? {
+            agent: displayedAgent, mandate: displayedMandate, events: displayedEvents,
+            source: result?.moneyMode === "mock" ? "mock-demo" : "gateway",
+          } : undefined} />
         </aside>
       </section>
 
       <footer>
         <span>unflat × agents</span>
-        <p>Mandate first. Price validated. Allowlist only.</p>
+        <p>
+          {health
+            ? `Live: ${liveAdapters.join(", ") || "none"} · Mock: ${mockAdapters.join(", ") || "none"} · Swarm ID: owner connects in browser`
+            : "Mandate first. Price validated. Allowlist only."}
+        </p>
         <span>Built at ETHRome 2026</span>
       </footer>
     </main>
   );
 }
 
-const placeholderEvents = [
-  { id: "p1", agentId: "", action: "agent.create", status: "completed" as const, amountUsdcCents: 0, reason: "Ready to create a Privy agent wallet.", at: "2026-10-16T16:00:00Z" },
-  { id: "p2", agentId: "", action: "mandate.grant", status: "accepted" as const, amountUsdcCents: 0, reason: "A 2-minute TTL will be written to our store and Arkiv.", at: "2026-10-16T16:00:00Z" },
-  { id: "p3", agentId: "", action: "gateway.wait", status: "accepted" as const, amountUsdcCents: 0, reason: "Run the sequence to see the signing boundary close.", at: "2026-10-16T16:00:00Z" },
+const placeholderEvents = (at: string): StatementEvent[] => [
+  { id: "p1", agentId: "", action: "agent.create", status: "completed" as const, amountUsdcCents: 0, reason: "Ready to create a Privy agent wallet.", at },
+  { id: "p2", agentId: "", action: "mandate.grant", status: "accepted" as const, amountUsdcCents: 0, reason: "A 2-minute TTL will be written to our store and Arkiv.", at },
+  { id: "p3", agentId: "", action: "gateway.wait", status: "accepted" as const, amountUsdcCents: 0, reason: "Run the sequence to see the signing boundary close.", at },
 ];
-

@@ -4,18 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 127.0.0.1",
     "test": "vitest run",
+    "test:swarm": "npm run build && playwright test --config playwright.swarm.config.ts",
     "typecheck": "tsc --noEmit",
     "demo": "node --import tsx scripts/demo.ts",
+    "demo:arkiv": "node --import tsx scripts/demo-arkiv.ts",
+    "demo:earn": "node --import tsx scripts/demo-earn.ts",
+    "demo:mock": "node --import tsx scripts/demo-mock.ts",
+    "verify:mandate": "node --import tsx scripts/verify-mandate.ts",
     "mcp": "node --import tsx src/mcp/server.ts"
   },
   "dependencies": {
-    "@arkiv-network/sdk": "0.7.0",
+    "@arkiv-network/sdk": "0.8.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@privy-io/node": "0.34.0",
+    "@snaha/swarm-id": "0.4.1",
     "@x402/core": "2.25.0",
     "@x402/evm": "2.25.0",
     "@x402/fetch": "2.25.0",
@@ -26,6 +32,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/node": "^24.10.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "^19.2.3",

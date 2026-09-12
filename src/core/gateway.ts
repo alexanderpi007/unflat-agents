@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { IdempotencyError, RefusalError } from "./errors";
 import { MandateService } from "./mandates";
+import { createMandateCommitment } from "./mandate-commitment";
 import type { Dependencies } from "./ports";
 import { encryptStatement } from "./statement";
+import { aimorganFeeWaivedLabel, directMorphoLabel } from "./labels";
 import type {
   ActionKind,
   Agent,
@@ -11,19 +13,31 @@ import type {
   PriceValidation,
   StatementEvent,
   Strategy,
+  X402Quote,
+  X402QuoteConfirmation,
 } from "./types";
 
-const allActions: ActionKind[] = ["x402.pay", "aimorgan.strategize", "earn.sweep"];
+const allActions: ActionKind[] = ["usdc.transfer", "x402.pay", "aimorgan.strategize", "earn.sweep"];
 
 export class SigningGateway {
   private readonly mandates: MandateService;
 
   constructor(private readonly deps: Dependencies) {
     if (deps.vaultAllowlist.length === 0) throw new Error("At least one unflat vault must be allowlisted.");
-    this.mandates = new MandateService(deps.store, deps.clock);
+    this.mandates = new MandateService(deps.store, deps.clock, deps.arkiv);
   }
 
   async createAgent(displayName: string): Promise<Agent> {
+    return this.provisionAgent(randomUUID(), displayName);
+  }
+
+  async getOrCreateAgent(agentId: string, displayName: string): Promise<{ agent: Agent; reused: boolean }> {
+    const existing = await this.deps.store.getAgent(agentId);
+    if (existing) return { agent: existing, reused: true };
+    return { agent: await this.provisionAgent(agentId, displayName), reused: false };
+  }
+
+  private async provisionAgent(agentId: string, displayName: string): Promise<Agent> {
     const label = displayName
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
@@ -34,7 +48,7 @@ export class SigningGateway {
     const wallet = await this.deps.wallet.createWallet();
     const identity = await this.deps.ens.createIdentity(label, wallet.address);
     const agent: Agent = {
-      id: randomUUID(),
+      id: agentId,
       displayName,
       ensName: identity.name,
       walletId: wallet.walletId,
@@ -44,6 +58,49 @@ export class SigningGateway {
     await this.deps.store.putAgent(agent);
     await this.event(agent.id, "agent.create", "completed", 0, `Agent created as ${identity.name}.`, identity.reference);
     return agent;
+  }
+
+  async previewStrategize(input: { agentId: string; totalUsdcCents: number }) {
+    const agent = await this.requireAgent(input.agentId);
+    const dryStrategy = await this.deps.aiMorgan.strategize({
+      agentAddress: agent.walletAddress,
+      totalUsdcCents: input.totalUsdcCents,
+      dry: true,
+    });
+    await this.requirePriceValidation(input.agentId, "aimorgan.strategize", dryStrategy.priceValidation);
+    if (!this.deps.aiMorganX402) {
+      return { mode: "waived" as const, dryStrategy, feeUsdcCents: 0 };
+    }
+    const quote = await this.deps.x402.quote("https://aimorgan.net/api/strategize", {
+      method: "POST",
+      body: this.strategizeBody(agent.walletAddress, input.totalUsdcCents),
+    });
+    await this.requireDeclaredPriceMatch(input.agentId, quote, dryStrategy.priceValidation);
+    return { mode: "x402" as const, dryStrategy, quote, quoteValidation: dryStrategy.priceValidation! };
+  }
+
+  async usdcBalance(agentId: string) {
+    const agent = await this.requireAgent(agentId);
+    return this.deps.preflight.getUsdcBalance(agent.walletAddress);
+  }
+
+  async previewVaultDeposit(input: { agentId: string; amountUsdcCents: number }) {
+    const agent = await this.requireAgent(input.agentId);
+    const vault = this.selectedVault();
+    if (vault.execution === "privy-earn-api") await this.deps.wallet.verifyPrivyEarnVault(vault);
+    const preflight = await this.deps.preflight.verifyEarn({
+      walletAddress: agent.walletAddress,
+      vaultAddress: vault.address,
+      amountUsdcCents: input.amountUsdcCents,
+      execution: vault.execution,
+    });
+    const rawAmount = String(BigInt(input.amountUsdcCents) * 10_000n);
+    return {
+      vault,
+      preflight,
+      approvalRequired: vault.execution === "direct-morpho"
+        && !(preflight.allowanceRawAmount === rawAmount && preflight.approvalTransactionHash),
+    };
   }
 
   async grantMandate(input: {
@@ -61,9 +118,11 @@ export class SigningGateway {
     }
 
     const now = this.deps.clock.now();
-    const existing = await this.deps.store.getMandate(input.agentId);
-    if (existing && now.getTime() < new Date(existing.expiresAt).getTime()) {
-      throw new Error(`An active mandate already exists until ${existing.expiresAt}; wait for its TTL to expire.`);
+    const existing = await this.deps.arkiv.findValidMandates(input.agentId);
+    if (existing.found) {
+      throw new Error(
+        `Arkiv already contains a live mandate for this agent at block ${existing.blockNumber}; wait for its TTL to expire.`,
+      );
     }
     const mandate: Mandate = {
       id: randomUUID(),
@@ -78,16 +137,35 @@ export class SigningGateway {
       createdAt: now.toISOString(),
     };
 
-    const arkiv = await this.deps.arkiv.publishMandate(mandate);
-    const published = { ...mandate, arkivEntityKey: arkiv.entityKey };
+    const opening = createMandateCommitment({
+      mandateId: mandate.id,
+      agentId: mandate.agentId,
+      maxTotalUsdcCents: mandate.maxTotalUsdcCents,
+      maxPerActionUsdcCents: mandate.maxPerActionUsdcCents,
+    });
+    const arkiv = await this.deps.arkiv.publishMandate({
+      agentId: mandate.agentId,
+      expiry: mandate.expiresAt,
+      commitment: opening.commitment,
+      durationSeconds: input.durationSeconds,
+    });
+    const published: Mandate = {
+      ...mandate,
+      arkivEntityKey: arkiv.entityKey,
+      arkivTransactionHash: arkiv.transactionHash,
+      arkivExplorerUrl: arkiv.explorerUrl,
+      arkivExpiresAtBlock: arkiv.expiresAtBlock,
+      arkivCommitment: arkiv.commitment,
+    };
+    await this.deps.store.putMandateOpening(opening);
     await this.deps.store.putMandate(published);
     await this.event(
       input.agentId,
       "mandate.grant",
       "completed",
       0,
-      `Mandate granted until ${published.expiresAt}; expiry is automatic and no revocation transaction exists.`,
-      arkiv.entityKey,
+      `Mandate granted as Arkiv entity ${arkiv.entityKey}, expiring at block ${arkiv.expiresAtBlock}; expiry is automatic and no revocation transaction exists. ${arkiv.explorerUrl}`,
+      arkiv.explorerUrl,
     );
     return published;
   }
@@ -119,13 +197,85 @@ export class SigningGateway {
         "completed",
         quote.amountUsdcCents,
         signingDecision.reason,
-        settlement.settlementId,
+        settlement.transactionHash,
       );
       return { quote, settlement, decision: signingDecision };
     });
   }
 
-  async strategize(input: { agentId: string; totalUsdcCents: number; idempotencyKey: string }): Promise<Strategy> {
+  async transferUsdc(input: {
+    agentId: string;
+    recipient: Agent["walletAddress"];
+    amountUsdcCents: number;
+    idempotencyKey: string;
+  }) {
+    return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
+      const agent = await this.requireAgent(input.agentId);
+      const initial = await this.mandates.decide(input.agentId, "usdc.transfer", input.amountUsdcCents);
+      if (!initial.allowed) return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, initial);
+      if (!this.deps.demoPaymentRecipient
+        || input.recipient.toLowerCase() !== this.deps.demoPaymentRecipient.toLowerCase()) {
+        return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, {
+          ...initial,
+          allowed: false,
+          reason: "REFUSED — recipient is not the configured demo payment address; nothing was signed.",
+        });
+      }
+
+      const validation = await this.deps.aiMorgan.strategize({
+        agentAddress: agent.walletAddress,
+        totalUsdcCents: input.amountUsdcCents,
+        dry: true,
+      });
+      await this.requirePriceValidation(input.agentId, "usdc.transfer", validation.priceValidation);
+      const preflight = await this.deps.preflight.verifyUsdcTransfer({
+        walletAddress: agent.walletAddress,
+        recipient: input.recipient,
+        amountUsdcCents: input.amountUsdcCents,
+      });
+      if (!preflight.allPassed) {
+        return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, {
+          ...initial,
+          allowed: false,
+          reason: `REFUSED — independent Base transfer preflight failed: ${preflight.reason}`,
+        });
+      }
+
+      const signingDecision = await this.mandates.decideAndReserve(
+        input.agentId,
+        "usdc.transfer",
+        input.amountUsdcCents,
+      );
+      if (!signingDecision.allowed) {
+        return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, signingDecision);
+      }
+      const transfer = await this.deps.wallet.transferUsdc({
+        walletId: agent.walletId,
+        recipient: input.recipient,
+        amountUsdcCents: input.amountUsdcCents,
+        idempotencyKey: input.idempotencyKey,
+      });
+      const transferProof = transfer.source === "privy-live"
+        ? `Transaction ${transfer.transactionHash}: ${transfer.explorerUrl ?? `https://basescan.org/tx/${transfer.transactionHash}`}`
+        : `MOCK SAFETY NET — no transaction was broadcast; simulated reference ${transfer.transactionHash}.`;
+      await this.event(
+        input.agentId,
+        "usdc.transfer",
+        "completed",
+        input.amountUsdcCents,
+        `${signingDecision.reason} AIMorgan priceValidation.allPassed was true and independent Base gas/balance checks passed. ${transferProof}`,
+        transfer.transactionHash,
+      );
+      return { transfer, preflight, decision: signingDecision };
+    });
+  }
+
+  async strategize(input: {
+    agentId: string;
+    totalUsdcCents: number;
+    idempotencyKey: string;
+    confirmedQuote?: X402QuoteConfirmation;
+  }): Promise<Strategy> {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
       const initial = await this.mandates.decide(input.agentId, "aimorgan.strategize", 0);
@@ -143,16 +293,43 @@ export class SigningGateway {
         dryStrategy.priceValidation,
       );
 
+      if (!this.deps.aiMorganX402) {
+        const freeStrategy = await this.deps.aiMorgan.strategize({
+          agentAddress: agent.walletAddress,
+          totalUsdcCents: input.totalUsdcCents,
+          dry: false,
+          feeWaived: true,
+        });
+        await this.requirePriceValidation(
+          input.agentId,
+          "aimorgan.strategize",
+          freeStrategy.priceValidation,
+        );
+        await this.deps.store.putStrategy(input.agentId, freeStrategy);
+        await this.event(
+          input.agentId,
+          "aimorgan.strategize",
+          "completed",
+          0,
+          `${initial.reason} Dry strategize ran before the free REST call. ${aimorganFeeWaivedLabel}.`,
+          freeStrategy.id,
+        );
+        return freeStrategy;
+      }
+
       const quote = await this.deps.x402.quote("https://aimorgan.net/api/strategize", {
         method: "POST",
-        body: {
-          agent_address: agent.walletAddress,
-          total_usdc: (input.totalUsdcCents / 100).toFixed(2),
-          dry: false,
-        },
+        body: this.strategizeBody(agent.walletAddress, input.totalUsdcCents),
       });
-      const quoteValidation = await this.deps.aiMorgan.validatePrice(quote);
-      await this.requirePriceValidation(input.agentId, "aimorgan.strategize", quoteValidation);
+      await this.requireDeclaredPriceMatch(input.agentId, quote, dryStrategy.priceValidation);
+      if (input.confirmedQuote && !this.quoteMatches(input.confirmedQuote, quote)) {
+        const current = await this.mandates.decide(input.agentId, "aimorgan.strategize", quote.amountUsdcCents);
+        return this.refuse(input.agentId, "aimorgan.strategize", quote.amountUsdcCents, {
+          ...current,
+          allowed: false,
+          reason: "REFUSED — the live x402 quote changed after confirmation; nothing was signed. Review and confirm the new quote.",
+        });
+      }
 
       const signingDecision = await this.mandates.decideAndReserve(
         input.agentId,
@@ -202,21 +379,124 @@ export class SigningGateway {
       await this.requirePriceValidation(input.agentId, "earn.sweep", strategy.priceValidation);
 
       // AIMorgan's vault picks are advisory. The deposit target comes only from our allowlist.
-      const vault = this.deps.vaultAllowlist[0];
+      const vault = this.selectedVault();
+      if (vault.execution === "privy-earn-api") await this.deps.wallet.verifyPrivyEarnVault(vault);
       const preflight = await this.deps.preflight.verifyEarn({
         walletAddress: agent.walletAddress,
         vaultAddress: vault.address,
         amountUsdcCents: input.amountUsdcCents,
+        execution: vault.execution,
       });
-      if (!preflight.allPassed || !preflight.allowanceOk) {
+      if (!preflight.allPassed) {
         const decision: MandateDecision = {
           allowed: false,
           checkedAt: this.deps.clock.now().toISOString(),
           remainingUsdcCents: initial.remainingUsdcCents,
           expiresAt: initial.expiresAt,
-          reason: `REFUSED — independent gas/allowance preflight failed: ${preflight.reason}`,
+          reason: `REFUSED — independent allowlist/asset/balance preflight failed: ${preflight.reason}`,
         };
         return this.refuse(input.agentId, "earn.sweep", input.amountUsdcCents, decision);
+      }
+
+      if (vault.execution === "direct-morpho") {
+        const rawAmount = String(BigInt(input.amountUsdcCents) * 10_000n);
+        let approval;
+        if (preflight.allowanceRawAmount === rawAmount && preflight.approvalTransactionHash) {
+          approval = {
+            transactionHash: preflight.approvalTransactionHash,
+            explorerUrl: `https://basescan.org/tx/${preflight.approvalTransactionHash}`,
+          };
+          await this.event(
+            input.agentId,
+            "earn.approve",
+            "completed",
+            0,
+            `${directMorphoLabel}. Reused the already-confirmed exact $${(input.amountUsdcCents / 100).toFixed(2)} USDC approval to allowlisted ${vault.label}; no approval was signed again. ${approval.explorerUrl}`,
+            approval.transactionHash,
+          );
+        } else {
+          // Approval moves no funds, so the locked check validates the full amount while reserving zero cents.
+          const approvalDecision = await this.mandates.decideAndReserve(
+            input.agentId,
+            "earn.sweep",
+            input.amountUsdcCents,
+            0,
+          );
+          if (!approvalDecision.allowed) {
+            return this.refuse(input.agentId, "earn.sweep", input.amountUsdcCents, approvalDecision);
+          }
+          approval = await this.deps.wallet.approveUsdc({
+            walletId: agent.walletId,
+            walletAddress: agent.walletAddress,
+            spender: vault.address,
+            amountUsdcCents: input.amountUsdcCents,
+            idempotencyKey: `${input.idempotencyKey}-approve`,
+          });
+          await this.event(
+            input.agentId,
+            "earn.approve",
+            "completed",
+            0,
+            `${directMorphoLabel}. Approved exactly $${(input.amountUsdcCents / 100).toFixed(2)} USDC to allowlisted ${vault.label}. ${approval.explorerUrl}`,
+            approval.transactionHash,
+          );
+        }
+
+        const simulation = await this.deps.preflight.simulateDirectDeposit({
+          walletAddress: agent.walletAddress,
+          vaultAddress: vault.address,
+          amountUsdcCents: input.amountUsdcCents,
+        });
+        if (!simulation.allPassed) {
+          const currentMandate = await this.deps.store.getMandate(input.agentId);
+          return this.refuse(input.agentId, "earn.sweep", input.amountUsdcCents, {
+            allowed: false,
+            checkedAt: this.deps.clock.now().toISOString(),
+            remainingUsdcCents: currentMandate
+              ? Math.max(0, currentMandate.maxTotalUsdcCents - currentMandate.spentUsdcCents)
+              : 0,
+            expiresAt: currentMandate?.expiresAt,
+            reason: `REFUSED — direct ERC-4626 deposit eth_call simulation failed after approval: ${simulation.reason} No deposit was signed.`,
+          });
+        }
+
+        const signingDecision = await this.mandates.decideAndReserve(
+          input.agentId,
+          "earn.sweep",
+          input.amountUsdcCents,
+        );
+        if (!signingDecision.allowed) {
+          return this.refuse(input.agentId, "earn.sweep", input.amountUsdcCents, signingDecision);
+        }
+        const executedDeposit = await this.deps.wallet.depositDirectVault({
+          walletId: agent.walletId,
+          walletAddress: agent.walletAddress,
+          vaultAddress: vault.address,
+          amountUsdcCents: input.amountUsdcCents,
+          idempotencyKey: `${input.idempotencyKey}-deposit`,
+        });
+        const deposit = {
+          mode: "direct-morpho" as const,
+          status: "succeeded" as const,
+          transactionHashes: [approval.transactionHash, executedDeposit.transactionHash],
+          approval,
+          deposit: {
+            transactionHash: executedDeposit.transactionHash,
+            explorerUrl: executedDeposit.explorerUrl,
+          },
+          sharesReceived: executedDeposit.sharesReceived,
+          sharesReceivedRaw: executedDeposit.sharesReceivedRaw,
+          shareDecimals: executedDeposit.shareDecimals,
+        };
+        await this.event(
+          input.agentId,
+          "earn.sweep",
+          "completed",
+          input.amountUsdcCents,
+          `${signingDecision.reason} ${directMorphoLabel} into allowlisted ${vault.label}; AIMorgan's vault picks were ignored. Received ${deposit.sharesReceived} vault shares. ${deposit.deposit.explorerUrl}`,
+          deposit.deposit.transactionHash,
+        );
+        return { vault, preflight: { ...preflight, simulation }, deposit, decision: signingDecision };
       }
 
       const signingDecision = await this.mandates.decideAndReserve(
@@ -230,6 +510,7 @@ export class SigningGateway {
       const deposit = await this.deps.wallet.depositEarn({
         walletId: agent.walletId,
         vaultId: vault.id,
+        vaultAddress: vault.address,
         amountUsdcCents: input.amountUsdcCents,
         idempotencyKey: input.idempotencyKey,
       });
@@ -249,8 +530,9 @@ export class SigningGateway {
     const agent = await this.requireAgent(agentId);
     const mandate = await this.deps.store.getMandate(agentId);
     if (!mandate) throw new Error("No mandate exists for this agent.");
+    const commitmentOpening = await this.deps.store.getMandateOpening(mandate.id);
     const events = await this.deps.store.listEvents(agentId);
-    const ciphertext = await encryptStatement({ agent, mandate, events }, ownerKey);
+    const ciphertext = await encryptStatement({ agent, mandate, commitmentOpening, events }, ownerKey);
     const uploaded = await this.deps.statementStorage.upload(ciphertext);
     await this.event(
       agentId,
@@ -272,6 +554,43 @@ export class SigningGateway {
     };
   }
 
+  async queryMandate(agentId: string) {
+    return this.deps.arkiv.findValidMandates(agentId);
+  }
+
+  async vaultRate() {
+    const vault = this.selectedVault();
+    const rate = await this.deps.vaultRate.getRate(vault);
+    return { vault, ...rate };
+  }
+
+  private selectedVault() {
+    const execution = this.deps.earnViaPrivy ? "privy-earn-api" : "direct-morpho";
+    const vault = this.deps.vaultAllowlist.find((candidate) => candidate.execution === execution);
+    if (!vault) throw new Error(`No allowlisted vault is configured for ${execution}.`);
+    return vault;
+  }
+
+  private strategizeBody(agentAddress: Agent["walletAddress"], totalUsdcCents: number) {
+    return {
+      agent_address: agentAddress,
+      total_usdc: (totalUsdcCents / 100).toFixed(2),
+      risk_profile: "conservative",
+      deterministic: true,
+      dry: false,
+    };
+  }
+
+  private quoteMatches(confirmed: X402QuoteConfirmation, current: X402Quote): boolean {
+    return confirmed.resource === current.resource
+      && confirmed.payTo.toLowerCase() === current.payTo.toLowerCase()
+      && confirmed.asset.toLowerCase() === current.asset.toLowerCase()
+      && confirmed.network === current.network
+      && confirmed.amountAtomic === current.amountAtomic
+      && confirmed.amountUsdcCents === current.amountUsdcCents
+      && confirmed.method === current.method;
+  }
+
   private async requirePriceValidation(
     agentId: string,
     action: ActionKind,
@@ -289,6 +608,25 @@ export class SigningGateway {
       expiresAt: mandate?.expiresAt,
     };
     return this.refuse(agentId, action, validation?.quotedUsdcCents ?? 0, decision);
+  }
+
+  private async requireDeclaredPriceMatch(
+    agentId: string,
+    quote: X402Quote,
+    validation: PriceValidation | undefined,
+  ): Promise<void> {
+    await this.requirePriceValidation(agentId, "aimorgan.strategize", validation);
+    if (validation!.quotedUsdcCents === quote.amountUsdcCents) return;
+    const mandate = await this.deps.store.getMandate(agentId);
+    return this.refuse(agentId, "aimorgan.strategize", quote.amountUsdcCents, {
+      allowed: false,
+      reason: `REFUSED — AIMorgan's dry response declared $${(validation!.quotedUsdcCents / 100).toFixed(2)} USDC but the paid x402 quote requested $${(quote.amountUsdcCents / 100).toFixed(2)} USDC; nothing was signed.`,
+      checkedAt: this.deps.clock.now().toISOString(),
+      remainingUsdcCents: mandate
+        ? Math.max(0, mandate.maxTotalUsdcCents - mandate.spentUsdcCents)
+        : 0,
+      expiresAt: mandate?.expiresAt,
+    });
   }
 
   private async refuse(agentId: string, action: string, amount: number, decision: MandateDecision): Promise<never> {

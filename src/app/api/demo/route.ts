@@ -1,16 +1,75 @@
-import { NextResponse } from "next/server";
-import { runDemo } from "@/demo/run";
+import { z } from "zod";
+import { apiFailure } from "@/app/api/responses";
+import { invalidRequest } from "@/app/api/responses";
+import { runtime as gatewayRuntime } from "@/server/runtime";
+import { isLocalRequest, requireLocalMutation } from "@/server/local-only";
+import { dashboardRuntime, demoAgent, persistentAgentId, persistentWalletAddress, requireDemoAdapters, runDashboardSequence } from "@/demo/dashboard-run";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+let running = false;
 
-export async function POST() {
+export async function GET(request: Request) {
   try {
-    return NextResponse.json(await runDemo());
+    const local = isLocalRequest(request);
+    const state = local && await gatewayRuntime.deps.store.getAgent(persistentAgentId)
+      ? await gatewayRuntime.gateway.state(persistentAgentId) : null;
+    const vault = gatewayRuntime.deps.vaultAllowlist.find(v => v.execution === "direct-morpho");
+    return Response.json({ state, localLiveAvailable: local, walletAddress: persistentWalletAddress,
+      plan: { recipient: gatewayRuntime.deps.demoPaymentRecipient, vault: vault?.address,
+        transferUsdc: "0.05", depositUsdc: "1.00", totalUsdc: "1.05", network: "Base mainnet", fee: "plus gas" } },
+    { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Demo failed." },
-      { status: 500 },
-    );
+    return apiFailure(error, "Live demo state could not be read.");
   }
 }
 
+const schema = z.object({ mode: z.enum(["mock", "live"]), confirmation: z.string().optional(), runId: z.string().uuid() });
+
+export async function POST(request: Request) {
+  try {
+    const parsed = schema.safeParse(await request.json());
+    if (!parsed.success) return invalidRequest(parsed.error.flatten());
+    const { mode, confirmation, runId } = parsed.data;
+    if (mode === "live") {
+      try { requireLocalMutation(request); } catch (error) { return apiFailure(error, "LIVE execution forbidden.", 403); }
+      if (confirmation !== "CONFIRM") return invalidRequest("Type CONFIRM to authorize exactly 1.05 USDC plus Base gas.");
+    } else if (request.headers.get("origin") !== new URL(request.url).origin) {
+      return apiFailure(new Error("Same-origin browser request required."), "Demo request forbidden.", 403);
+    }
+    if (running) return apiFailure(new Error("A demo is already running in this process."), "Demo busy.", 409);
+    const configured = dashboardRuntime(mode);
+    requireDemoAdapters(configured, mode);
+    running = true;
+    let agent;
+    try {
+      agent = await demoAgent(configured, mode);
+      if (mode === "live") {
+        const claim = await configured.deps.store.claimIdempotency(`dashboard:${runId}`, "Base:transfer5:deposit100");
+        if (!claim.fresh) throw new Error("This LIVE run was already submitted. Inspect the statement; do not submit again.");
+      }
+    } catch (error) { running = false; throw error; }
+    const encoder = new TextEncoder();
+    let connected = true;
+    const stream = new ReadableStream({
+      async start(controller) {
+        const emit = (value: unknown) => { if (connected) controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`)); };
+        try {
+          await runDashboardSequence(configured, agent, mode, runId, emit);
+          if (mode === "live") await configured.deps.store.finishIdempotency(`dashboard:${runId}`, { complete: true });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "Unknown failure";
+          if (mode === "live") await configured.deps.store.failIdempotency(`dashboard:${runId}`, detail);
+          const state = await configured.gateway.state(agent.id);
+          emit({ moneyMode: mode, phase: "Failed — inspect statement before retry", error: "Demo failed.", detail,
+            snapshot: state.mandate ? state : undefined });
+        } finally { running = false; if (connected) controller.close(); }
+      },
+      cancel() { connected = false; },
+    });
+    return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" } });
+  } catch (error) {
+    return apiFailure(error, "Demo failed.");
+  }
+}

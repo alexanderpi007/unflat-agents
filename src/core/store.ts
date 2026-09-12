@@ -1,10 +1,18 @@
 import type { GatewayStore } from "./ports";
-import type { Agent, Mandate, StatementEvent, StoredIdempotency, Strategy } from "./types";
+import type {
+  Agent,
+  Mandate,
+  MandateCommitmentOpening,
+  StatementEvent,
+  StoredIdempotency,
+  Strategy,
+} from "./types";
 import { IdempotencyError } from "./errors";
 
 export class MemoryGatewayStore implements GatewayStore {
   private readonly agents = new Map<string, Agent>();
   private readonly mandates = new Map<string, Mandate>();
+  private readonly mandateOpenings = new Map<string, MandateCommitmentOpening>();
   private readonly events: StatementEvent[] = [];
   private readonly idempotency = new Map<string, StoredIdempotency>();
   private readonly strategies = new Map<string, Strategy>();
@@ -40,6 +48,15 @@ export class MemoryGatewayStore implements GatewayStore {
   async getMandate(agentId: string): Promise<Mandate | undefined> {
     const mandate = this.mandates.get(agentId);
     return mandate ? structuredClone(mandate) : undefined;
+  }
+
+  async putMandateOpening(opening: MandateCommitmentOpening): Promise<void> {
+    await this.locked(() => this.mandateOpenings.set(opening.mandateId, structuredClone(opening)));
+  }
+
+  async getMandateOpening(mandateId: string): Promise<MandateCommitmentOpening | undefined> {
+    const opening = this.mandateOpenings.get(mandateId);
+    return opening ? structuredClone(opening) : undefined;
   }
 
   async updateMandate(agentId: string, update: (mandate: Mandate) => Mandate): Promise<Mandate | undefined> {
