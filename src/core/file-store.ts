@@ -119,7 +119,14 @@ export class FileGatewayStore implements GatewayStore {
   }
 
   async appendEvent(event: StatementEvent): Promise<void> {
-    await this.mutate((state) => { state.events.push(event); });
+    await this.mutate((state) => {
+      if (state.events.some((existing) => existing.id === event.id || (
+        event.action === "earn.sweep" && event.status === "completed" && event.reference
+        && existing.agentId === event.agentId && existing.action === event.action
+        && existing.status === event.status && existing.reference === event.reference
+      ))) return;
+      state.events.push(event);
+    });
   }
 
   async listEvents(agentId: string): Promise<StatementEvent[]> {

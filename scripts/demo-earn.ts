@@ -25,13 +25,17 @@ async function main() {
     throw new Error("Set AIMORGAN_X402=false so this retry cannot create an AIMorgan payment.");
   }
 
-  const { agent } = await runtime.gateway.getOrCreateAgent(persistentAgentId, "Atlas");
+  const agent = await runtime.deps.store.getAgent(persistentAgentId);
+  if (!agent) throw new Error("Persistent wallet missing. Recovery cannot create a new wallet.");
   const vault = await runtime.gateway.vaultRate();
   const balance = await runtime.gateway.usdcBalance(agent.id);
   const depositPreview = await runtime.gateway.previewVaultDeposit({
     agentId: agent.id,
     amountUsdcCents: depositUsdcCents,
   });
+  if (vault.vault.execution !== "direct-morpho" || depositPreview.approvalRequired) {
+    throw new Error("Deposit-only recovery requires an existing exact approval. No new approval is permitted.");
+  }
   const preview = await runtime.gateway.previewStrategize({
     agentId: agent.id,
     totalUsdcCents: depositUsdcCents,
@@ -107,6 +111,7 @@ async function main() {
     strategyId: strategy.id,
     amountUsdcCents: depositUsdcCents,
     idempotencyKey: `live-earn-retry-${randomUUID()}`,
+    approvalPolicy: "reuse-only",
   });
 
   if (sweep.deposit.mode === "direct-morpho") {

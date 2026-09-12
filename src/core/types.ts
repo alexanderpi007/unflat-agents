@@ -138,7 +138,7 @@ export interface DirectVaultDepositResult {
   explorerUrl: string;
   sharesReceived: string;
   sharesReceivedRaw: string;
-  shareDecimals: number;
+  shareDecimals: number | null;
 }
 
 export interface DirectEarnDepositResult {
@@ -149,7 +149,7 @@ export interface DirectEarnDepositResult {
   deposit: DirectVaultTransaction;
   sharesReceived: string;
   sharesReceivedRaw: string;
-  shareDecimals: number;
+  shareDecimals: number | null;
 }
 
 export interface UsdcTransferResult {

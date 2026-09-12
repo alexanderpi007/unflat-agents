@@ -21,6 +21,22 @@ async function ready(clock = start(), aiMorganX402 = false) {
 }
 
 describe("SigningGateway safety boundary", () => {
+  it("records completion and caches the result when share formatting is unavailable", async () => {
+    const runtime = await ready();
+    const strategy = await runtime.gateway.strategize({ agentId: runtime.agent.id, totalUsdcCents: 100, idempotencyKey: "format-strategy" });
+    const deposit = vi.spyOn(runtime.deps.wallet, "depositDirectVault").mockResolvedValue({
+      transactionHash: `0x${"2".repeat(64)}`, explorerUrl: `https://basescan.org/tx/0x${"2".repeat(64)}`,
+      sharesReceived: "unavailable", sharesReceivedRaw: "961301103141262720", shareDecimals: null,
+    });
+    const input = { agentId: runtime.agent.id, strategyId: strategy.id, amountUsdcCents: 100, idempotencyKey: "format-sweep" };
+    const result = await runtime.gateway.sweepIdle(input);
+    expect(await runtime.gateway.sweepIdle(input)).toEqual(result);
+    expect(deposit).toHaveBeenCalledTimes(1);
+    const event = (await runtime.gateway.state(runtime.agent.id)).events.at(-1);
+    expect(event).toMatchObject({ action: "earn.sweep", status: "completed" });
+    expect(event?.reason).toContain("961301103141262720 raw vault shares");
+    expect(event?.reason).toContain("decimals unavailable");
+  });
   it("refuses an unresolved ENS identity before AIMorgan, payment or signing", async () => {
     const runtime = await ready();
     vi.spyOn(runtime.deps.ens, "resolveIdentity").mockResolvedValue({ address: null, explorerUrl: "", mode: "live" });
@@ -305,6 +321,7 @@ describe("SigningGateway safety boundary", () => {
       strategyId: strategy.id,
       amountUsdcCents: 100,
       idempotencyKey: "reuse-exact-approval",
+      approvalPolicy: "reuse-only",
     });
 
     expect(runtime.wallet.calls.filter((call) => call.startsWith("approveUsdc"))).toHaveLength(0);
@@ -315,6 +332,15 @@ describe("SigningGateway safety boundary", () => {
       reference: approvalHash,
       reason: expect.stringContaining("no approval was signed again"),
     });
+  });
+
+  it("deposit-only recovery cannot fall back to a new approval", async () => {
+    const runtime = await ready();
+    const strategy = await runtime.gateway.strategize({ agentId: runtime.agent.id, totalUsdcCents: 100, idempotencyKey: "recovery-strategy" });
+    const before = runtime.wallet.calls.length;
+    await expect(runtime.gateway.sweepIdle({ agentId: runtime.agent.id, strategyId: strategy.id,
+      amountUsdcCents: 100, idempotencyKey: "recovery-no-proof", approvalPolicy: "reuse-only" })).rejects.toThrow("No approval was signed");
+    expect(runtime.wallet.calls).toHaveLength(before);
   });
 
   it("keeps the Privy Earn API path behind the explicit flag", async () => {

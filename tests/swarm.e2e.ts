@@ -7,6 +7,8 @@ const secret = "ab".repeat(64); // Synthetic test reference; never a live drive 
 test("localhost shows exact LIVE plan but cannot run without typed confirmation", async ({ page }) => {
   await page.goto("http://localhost:3107");
   const live = page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true });
+  await expect(live).toHaveCount(0);
+  await page.getByRole("button", { name: "Owner mode", exact: true }).click();
   await expect(live).toBeVisible();
   await expect(live).toBeDisabled();
   await expect(page.getByText(/Total 1.05 USDC plus gas/)).toBeVisible();
@@ -62,7 +64,7 @@ test("native encryption request, dev deferred mode, fresh-context retrieval and 
   await page.frameLocator('#owner-swarm-proxy iframe').getByRole("button", { name: "Owner: connect Swarm ID", exact: true }).click();
   await expect(page.getByText("Connected: Test owner · owner drive ready", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Run MOCK money · real Arkiv →", exact: true }).click();
+  await page.getByRole("button", { name: "Run the demo →", exact: true }).click();
   await expect(page.getByText("EXPIRED", { exact: true })).toBeVisible();
   await expect(page.getByText("Action refused", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Deferred upload mode", exact: true })).toBeChecked();

@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ActionFeed } from "./action-feed";
+import { MandateTimer } from "./mandate-timer";
+import { RefusalResult } from "./refusal-result";
+import { ProofFooter } from "./proof-footer";
 import { OwnerRecord } from "./owner-record";
-import { DemoControls, type DemoPlan } from "./demo-controls";
+import { OwnerControls, type DemoPlan } from "./demo-controls";
+import { DemoStepper } from "./demo-stepper";
+import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
 import { aimorganFeeWaivedLabel, directMorphoLabel } from "@/core/labels";
 import type {
   Agent,
-  DemoSnapshot,
+  ArkivMandateQuery,
   EarnVaultRate,
   Mandate,
   RuntimeHealth,
@@ -37,20 +43,22 @@ export function Dashboard() {
   const [result, setResult] = useState<DemoResult>();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [loadedAt, setLoadedAt] = useState("");
+  const [lastUpdateAt, setLastUpdateAt] = useState<number>();
+  const [queryEvidence, setQueryEvidence] = useState<{ before?: ArkivMandateQuery; after?: ArkivMandateQuery }>({});
   const [vaultRate, setVaultRate] = useState<VaultRate>();
   const [vaultRateError, setVaultRateError] = useState(false);
   const [health, setHealth] = useState<RuntimeHealth>();
   const [healthError, setHealthError] = useState(false);
   const [liveState, setLiveState] = useState<LiveState>();
+  const [previousEvents, setPreviousEvents] = useState<StatementEvent[]>([]);
   const [publicIdentity, setPublicIdentity] = useState<Partial<Agent>>();
   const [localLiveAvailable, setLocalLiveAvailable] = useState(false);
+  const [ownerMode, setOwnerMode] = useState(false);
   const [plan, setPlan] = useState<DemoPlan>();
   const [walletAddress, setWalletAddress] = useState("");
   const runLock = useRef(false);
 
   useEffect(() => {
-    setLoadedAt(new Date().toISOString());
     let active = true;
     fetch("/api/vault", { cache: "no-store" })
       .then(async (response) => {
@@ -74,7 +82,11 @@ export function Dashboard() {
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error ?? "Live demo state unavailable.");
-        if (active && body.state) setLiveState(body.state);
+        if (active && body.state) {
+          const partition = splitRunEvents(body.state.events, body.state.mandate);
+          setLiveState({ ...body.state, events: partition.current });
+          setPreviousEvents(previous => mergeEventHistory(previous, partition.previous));
+        }
         if (active) {
           setPublicIdentity(body.identity);
           setLocalLiveAvailable(body.localLiveAvailable === true && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname));
@@ -90,8 +102,11 @@ export function Dashboard() {
   async function run(mode: DemoMoney, confirmation?: string) {
     if (runLock.current) return;
     runLock.current = true;
+    setPreviousEvents(previous => mergeEventHistory(previous, displayedEvents));
     setRunning(true);
     setError("");
+    setLastUpdateAt(Date.now());
+    setQueryEvidence({});
     setResult({ moneyMode: mode, phase: "Preparing real Arkiv mandate…" });
     try {
       const response = await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -108,7 +123,12 @@ export function Dashboard() {
         const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
         for (const line of lines.filter(Boolean)) {
           const update = JSON.parse(line) as DashboardUpdate;
-          setResult(update);
+          setResult(previous => update.error ? { ...previous, ...update, snapshot: update.snapshot ?? previous?.snapshot } : update);
+          setLastUpdateAt(Date.now());
+          if (update.query) {
+            const query = update.query;
+            setQueryEvidence(previous => query.found ? { ...previous, before: previous.before ?? query } : { ...previous, after: query });
+          }
           if (update.error) throw new Error(`${update.error} ${update.detail}`);
           finished = update.expired === true;
         }
@@ -128,194 +148,111 @@ export function Dashboard() {
   const displayedAgent = statementAgent ?? publicIdentity;
   const displayedMandate = result ? snapshot?.mandate : liveState?.mandate;
   const displayedEvents = result ? snapshot?.events ?? [] : liveState?.events ?? [];
-  const mandateCap = displayedMandate?.maxTotalUsdcCents ?? 105;
+  const mandateCap = displayedMandate?.maxTotalUsdcCents ?? 120;
   const remaining = displayedMandate
     ? displayedMandate.maxTotalUsdcCents - displayedMandate.spentUsdcCents
     : mandateCap;
   const refusal = displayedEvents.findLast((event) => event.status === "refused");
-  const mandateExpired = result ? result.expired === true : displayedMandate
-    ? Date.now() >= new Date(displayedMandate.expiresAt).getTime()
-    : false;
-  const liveAdapters = health
-    ? adapters.filter(([key]) => health.adapters[key].mode === "live").map(([, label]) => label)
-    : [];
-  const mockAdapters = health
-    ? adapters.filter(([key]) => health.adapters[key].mode === "mock").map(([, label]) => label)
-    : [];
+  const mandateExpired = result?.expired === true;
+  const mockMoney = result ? result.moneyMode === "mock" : !liveState;
+  const nameVerified = displayedAgent?.ensMode === "live" && !!displayedAgent?.ensResolvedAddress
+    && displayedAgent.ensResolvedAddress.toLowerCase() === displayedAgent.walletAddress?.toLowerCase();
 
   return (
-    <main>
+    <main className="story-page">
+      <a className="skip-link" href="#budget">Skip to the expiring budget</a>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="unflat agents home">
-          <span className="brand-mark">u</span>
-          <span>unflat</span>
-          <span className="brand-cross">×</span>
-          <span>agents</span>
-        </a>
-        <div className="network"><i /> Base mainnet <span>/</span> Sepolia identity</div>
-        <div className="hack-badge">ETHRome · 40H</div>
+        <a className="brand" href="#top" aria-label="unflat agents home"><span className="brand-mark">u</span> unflat <span className="brand-cross">×</span> agents</a>
+        <a href="#proofs">What is real?</a><div className="header-actions">
+          {localLiveAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-money" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
+          <div className="hack-badge">ETHRome · 40H</div>
+        </div>
       </header>
-
-      <section className="adapter-strip" aria-label="Adapter runtime modes">
-        {health
-          ? adapters.map(([key, label]) => (
-              <span key={key} title={health.adapters[key].detail}>
-                {label}: <b className={health.adapters[key].mode}>{health.adapters[key].mode.toUpperCase()}</b>
-              </span>
-            ))
-          : <span>{healthError ? "Adapter health unavailable" : "Reading adapter modes…"}</span>}
-      </section>
-
+      {localLiveAvailable && ownerMode && <OwnerControls run={run} running={running} plan={plan} />}
       <section className="hero" id="top">
-        <div>
-          <p className="eyebrow">CONTROL ROOM / AGENT 01</p>
-          <h1>A bank account<br />with an <em>ending.</em></h1>
-          <p className="lede">
-            The mandate expires. The signer closes. No kill switch, no revocation transaction,
-            no forgotten permission living forever.
-          </p>
+        <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
+          <h1>A name. A budget.<br />An <em>expiry.</em></h1>
+          <p className="lede">An agent gets a bank account with a name, a budget that expires, yield on idle funds, and a statement its owner keeps. When time runs out, the next action is refused. Nobody revokes anything.</p>
         </div>
-        <div className="run-panel">
-          <div className="run-head">
-            <span>{result ? `${result.moneyMode.toUpperCase()} MONEY · LIVE ARKIV` : "Choose money mode · LIVE ARKIV"}</span>
-            <b>02:00</b>
-          </div>
-          <div className="flow-line">
-            <span>CREATE</span><i /><span>PAY</span><i /><span>YIELD</span><i /><span>REFUSE</span>
-          </div>
-          <DemoControls run={run} running={running} localLiveAvailable={localLiveAvailable} plan={plan} />
-          {result && <p role="status">{result.phase}{result.query ? ` · Arkiv block ${result.query.blockNumber} · found=${result.query.found}` : ""}</p>}
-          <small>
-            {health?.globalMockOverride
-              ? "Mock money · live Arkiv and browser Swarm ID"
-              : "Per-adapter mode · runtime timestamps"}
-          </small>
-          <small className="fee-waived">{aimorganFeeWaivedLabel}</small>
-          {error && <p className="error">{error}</p>}
-        </div>
-      </section>
-
-      <section className="account-grid">
-        <article className="identity-card panel">
-          <div className="panel-label">AGENT IDENTITY</div>
-          <div className="avatar">A<span>01</span></div>
-          <div>
-            <h2>{displayedAgent?.displayName ?? "Atlas"}</h2>
-            <p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p>
-          </div>
-          <dl>
-            <div><dt>PERSISTENT PRIVY WALLET</dt><dd title={displayedAgent?.walletAddress ?? walletAddress}>{short(displayedAgent?.walletAddress ?? walletAddress) || "0x—"}</dd></div>
-            <div><dt>IDENTITY RAIL</dt><dd>ENSv2 · Sepolia</dd></div>
-            <div><dt>ENS RESOLVE-BACK {displayedAgent?.ensMode === "mock" ? "· MOCK" : ""}</dt><dd title={displayedAgent?.ensResolvedAddress ?? ""}>{displayedAgent?.ensResolvedAddress ? short(displayedAgent.ensResolvedAddress) : "Not resolved"}</dd></div>
-          </dl>
-          {displayedAgent?.ensExplorerUrl && <a href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">ENS Explorer ↗</a>}
-          {displayedAgent?.ensRegistrationTransaction && <a href={`https://sepolia.etherscan.io/tx/${displayedAgent.ensRegistrationTransaction}`} target="_blank" rel="noreferrer">Registration transaction ↗</a>}
-        </article>
-
-        <article className="balance-card panel">
-          <div className="panel-label">MANDATE BALANCE</div>
-          <strong>{money(remaining)}</strong>
-          <span>USDC available</span>
-          <div className="meter"><i style={{ width: `${(remaining / mandateCap) * 100}%` }} /></div>
-          <div className="balance-foot">
-            <span>Spent {money(displayedMandate?.spentUsdcCents ?? 0)}</span>
-            <span>Cap {money(mandateCap)}</span>
-          </div>
-        </article>
-
-        <article className={`mandate-card panel ${mandateExpired ? "expired" : "active"}`}>
-          <div className="panel-label">MANDATE STATE</div>
-          <div className="state-line"><i /><strong>{mandateExpired ? "EXPIRED" : displayedMandate ? "ACTIVE" : "READY"}</strong></div>
-          <p>{mandateExpired ? "Arkiv query empty · TTL elapsed naturally" : displayedMandate ? `Estimated expiry ${new Date(displayedMandate.expiresAt).toLocaleTimeString()} · authorization follows Arkiv blocks` : "Awaiting demo run"}</p>
-          {displayedMandate?.arkivExplorerUrl && (
-            <a href={displayedMandate.arkivExplorerUrl} target="_blank" rel="noreferrer">
-              Arkiv entity {short(displayedMandate.arkivEntityKey ?? "", 7)} ↗
-            </a>
-          )}
-          <dl>
-            <div><dt>PER ACTION</dt><dd>{money(displayedMandate?.maxPerActionUsdcCents ?? 100)}</dd></div>
-            <div><dt>REVOCATION TX</dt><dd>None</dd></div>
-          </dl>
-        </article>
-      </section>
-
-      {refusal && (
-        <section className="refusal" role="status">
-          <div className="stop-icon">×</div>
-          <div><span>GATEWAY DECISION</span><strong>Action refused</strong></div>
-          <p>{refusal.reason}</p>
-          <code>HTTP 403 / MANDATE_EXPIRED</code>
+        <section className="run-panel demo-object" aria-label="Two-minute demo">
+          <h2>Watch a two-minute budget expire.</h2>
+          <button onClick={() => void run("mock")} disabled={running}>Run the demo →</button>
+          <span className="demo-mode-pill">{result?.moneyMode === "live" ? "Real money · live Arkiv" : "Simulated money · live Arkiv"}</span>
+          <DemoStepper events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
+            confirmedExpired={mandateExpired} running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
+          {error && <div className="demo-error"><p role="alert">Demo interrupted. Review the details before retrying.</p><details><summary>Error details</summary><p>{error}</p></details></div>}
         </section>
-      )}
-
-      <section className="lower-grid">
-        <article className="timeline panel">
-          <div className="section-head">
-            <div><span>STATEMENT</span><h3>Every decision, readable.</h3></div>
-            <b>{displayedEvents.length} EVENTS</b>
-          </div>
-          <div className="events">
-            {(displayedEvents.length ? displayedEvents : placeholderEvents(loadedAt)).map((event) => (
-              <div className="event" key={event.id}>
-                <time>{event.at ? new Date(event.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" }) : "--:--:--"}</time>
-                <i className={event.status} />
-                <div>
-                  <strong>{event.action}</strong><p>{event.reason}</p>
-                  {event.reference?.startsWith("https://sepolia.etherscan.io/tx/") && <a href={event.reference} target="_blank" rel="noreferrer">ENS transaction · Sepolia ↗</a>}
-                  {result?.moneyMode !== "mock" && !event.action.startsWith("ens.") && event.action !== "agent.create" && /^0x[0-9a-fA-F]{64}$/.test(event.reference ?? "") && (
-                    <a href={`https://basescan.org/tx/${event.reference}`} target="_blank" rel="noreferrer">
-                      {short(event.reference!, 10)} · BaseScan ↗
-                    </a>
-                  )}
-                </div>
-                <span>{event.amountUsdcCents ? money(event.amountUsdcCents) : "—"}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <aside className="security-stack">
-          <article className="rail-card panel">
-            <div className="section-head"><div><span>YIELD RAIL</span><h3>Idle cash, working.</h3></div><b>BASE</b></div>
-            <p className="yield">
-              {vaultRate?.apyBasisPoints == null ? "—" : (vaultRate.apyBasisPoints / 100).toFixed(2)}
-              {vaultRate?.apyBasisPoints != null && <sup>%</sup>}
-            </p>
-            <small>
-              {vaultRateError
-                ? "Vault APY unavailable — no fallback substituted"
-                : vaultRate?.source === "morpho-api"
-                  ? `Live realized six-hour average APY · ${vaultRate.provider} API`
-                  : vaultRate?.source === "mock-unavailable"
-                    ? "MOCK — live Morpho APY unavailable; no number substituted"
-                    : "Reading allowlisted Morpho vault…"}
-            </small>
-            <div className="vault"><i>UF</i><div><strong>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}</strong><span>{vaultRate?.vault.execution === "privy-earn-api" ? "Morpho · via Privy Earn API" : directMorphoLabel}</span></div><b>ALLOWLISTED</b></div>
-            <p className="advisory">AIMorgan recommends. unflat decides where real funds go.</p>
-          </article>
-
-          <OwnerRecord statement={statementAgent && displayedMandate ? {
-            agent: statementAgent, mandate: displayedMandate, events: displayedEvents,
-            source: result?.moneyMode === "mock" ? "mock-demo" : "gateway",
-          } : undefined} />
-        </aside>
       </section>
 
-      <footer>
-        <span>unflat × agents</span>
-        <p>
-          {health
-            ? `Live: ${liveAdapters.join(", ") || "none"} · Mock: ${mockAdapters.join(", ") || "none"} · Swarm ID: owner connects in browser`
-            : "Mandate first. Price validated. Allowlist only."}
-        </p>
-        <span>Built at ETHRome 2026</span>
-      </footer>
+      <div className="story-content">
+        <section className="identity-card panel story-section">
+          <p className="panel-label">01 / THE AGENT</p>
+          <div className="avatar" aria-hidden="true">A<span>01</span></div>
+          <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2><p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p></div>
+          <div className="identity-summary">
+            <p>{nameVerified ? "Name verified: it points to Atlas’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
+            <p>Wallet: {short(displayedAgent?.walletAddress ?? walletAddress) || "Loading…"} · The same wallet is reused across dashboard runs.</p>
+            {displayedAgent?.ensExplorerUrl && <a href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">View ENS proof ↗</a>}
+            <details><summary>Identity details</summary>
+              <p>Wallet: {displayedAgent?.walletAddress}</p><p>Resolved from ENS: {displayedAgent?.ensResolvedAddress ?? "Not resolved"}</p>
+              <p>ENSv2 · Sepolia</p>
+              {displayedAgent?.ensRegistrationTransaction && <a href={`https://sepolia.etherscan.io/tx/${displayedAgent.ensRegistrationTransaction}`} target="_blank" rel="noreferrer">Registration transaction ↗</a>}
+            </details>
+          </div>
+        </section>
+
+        <section className="story-section panel" id="budget" tabIndex={-1}>
+          <p className="panel-label">02 / THE EXPIRING BUDGET</p>
+          <h2>Atlas can act for two minutes.</h2>
+          <p>Permission ends automatically. The owner does not need to revoke it.</p>
+          <div className="budget-layout">
+            <article className={`mandate-card ${mandateExpired ? "expired" : "active"}`}>
+              <MandateTimer expiresAt={displayedMandate?.expiresAt} confirmedExpired={mandateExpired}
+                running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
+              <p>Allowed: send USDC, request advice, deposit into an approved savings vault.</p>
+              <p>Maximum per action: {money(displayedMandate?.maxPerActionUsdcCents ?? 100)}.</p>
+              {displayedMandate?.arkivExplorerUrl && <a href={displayedMandate.arkivExplorerUrl} target="_blank" rel="noreferrer">View expiring permission ↗</a>}
+              <details><summary>Permission details</summary><p>Arkiv entity: {displayedMandate?.arkivEntityKey ?? "Not created yet"}</p>
+                <p>Expiry block: {displayedMandate?.arkivExpiresAtBlock ?? "—"}. Authorization follows fresh Arkiv queries, not the display clock.</p>
+                {result?.query && <p>Block {result.query.blockNumber.toString()} · found={String(result.query.found)}</p>}
+              </details>
+            </article>
+            <article className="balance-card">
+              <strong>{money(remaining)}</strong><span>Budget {mandateExpired ? "left when time ran out" : "remaining"}</span>
+              <div className="meter"><i style={{ width: `${(remaining / mandateCap) * 100}%` }} /></div>
+              <div className="balance-foot"><span>Used {money(displayedMandate?.spentUsdcCents ?? 0)}</span><span>Budget {money(mandateCap)}</span></div>
+              <p>This is permission to use funds, not the wallet balance. Moving money into savings uses budget too.</p>
+            </article>
+          </div>
+        </section>
+
+        <ActionFeed events={displayedEvents} mockMoney={mockMoney} />
+        {previousEvents.length > 0 && <details className="story-section previous-runs"><summary>Previous runs</summary>
+          <p>Earlier decisions—not actions from the current run.</p>
+          <ActionFeed events={previousEvents} mockMoney={false} history />
+        </details>}
+        <article className="rail-card panel story-section">
+          <h3>Idle money can keep working.</h3>
+          <p>Atlas’s approved savings vault: {vaultRate?.vault.label ?? "Steakhouse Prime USDC"}.</p>
+          <p className="rate-inline">Variable annualized rate: <strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong></p>
+          <p>{vaultRate?.source === "morpho-api" ? "Source: Morpho API · realized six-hour average. Not a guaranteed return." : vaultRateError ? "Rate unavailable. No invented fallback." : "No live rate verified yet."}</p>
+          <details><summary>Savings details</summary><p>{directMorphoLabel}</p><p>{aimorganFeeWaivedLabel}</p><p>AIMorgan recommends. The gateway only deposits into approved vaults.</p></details>
+        </article>
+
+        <RefusalResult refusal={refusal} expired={mandateExpired} remaining={remaining} running={running} error={!!error} />
+
+        <OwnerRecord statement={statementAgent && displayedMandate ? {
+          agent: statementAgent, mandate: displayedMandate, events: displayedEvents,
+          source: mockMoney ? "mock-demo" : "gateway",
+        } : undefined} />
+
+        <ProofFooter liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified}
+          mandate={displayedMandate} before={queryEvidence.before} after={queryEvidence.after} health={health}>
+            {health ? adapters.map(([key, label]) => <p key={key}>{label}: {health.adapters[key].mode.toUpperCase()} — {health.adapters[key].detail}</p>) : <p>{healthError ? "Service status unavailable" : "Reading service status…"}</p>}
+            {result && <p>{result.phase}</p>}
+        </ProofFooter>
+      </div>
+      <footer><span>unflat × agents</span><p>Permission ends. The owner keeps the record.</p><span>Built at ETHRome 2026</span></footer>
     </main>
   );
 }
-
-const placeholderEvents = (at: string): StatementEvent[] => [
-  { id: "p1", agentId: "", action: "agent.create", status: "completed" as const, amountUsdcCents: 0, reason: "Ready to create a Privy agent wallet.", at },
-  { id: "p2", agentId: "", action: "mandate.grant", status: "accepted" as const, amountUsdcCents: 0, reason: "A 2-minute TTL will be written to our store and Arkiv.", at },
-  { id: "p3", agentId: "", action: "gateway.wait", status: "accepted" as const, amountUsdcCents: 0, reason: "Run the sequence to see the signing boundary close.", at },
-];

@@ -135,6 +135,7 @@ export interface PreflightPort {
     walletAddress: HexAddress;
     vaultAddress: HexAddress;
     amountUsdcCents: number;
+    approvalTransactionHash?: `0x${string}`;
   }): Promise<{
     allPassed: boolean;
     reason: string;

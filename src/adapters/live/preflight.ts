@@ -30,7 +30,7 @@ export class BaseEarnPreflightAdapter implements PreflightPort {
   private readonly client;
 
   constructor(rpcUrl: string) {
-    this.client = createPublicClient({ chain: base, transport: http(rpcUrl) });
+    this.client = createPublicClient({ chain: base, transport: http(rpcUrl, { retryCount: 3, retryDelay: 1000 }) });
   }
 
   async getUsdcBalance(walletAddress: Parameters<PreflightPort["getUsdcBalance"]>[0]) {
@@ -141,27 +141,49 @@ export class BaseEarnPreflightAdapter implements PreflightPort {
 
   async simulateDirectDeposit(input: Parameters<PreflightPort["simulateDirectDeposit"]>[0]) {
     const rawAmount = BigInt(input.amountUsdcCents) * 10_000n;
-    try {
-      const simulation = await this.client.simulateContract({
-        address: input.vaultAddress,
-        abi: erc4626Abi,
-        functionName: "deposit",
-        args: [rawAmount, input.walletAddress],
-        account: input.walletAddress,
-      });
-      if (simulation.result <= 0n) {
-        return { allPassed: false, reason: "ERC-4626 deposit eth_call returned zero shares." };
+    let context = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (!input.approvalTransactionHash) {
+          return { allPassed: false, reason: "Confirmed approval transaction proof required before deposit simulation." };
+        }
+        const receipt = await this.client.waitForTransactionReceipt({ hash: input.approvalTransactionHash, timeout: 15_000 });
+        if (receipt.status !== "success") return { allPassed: false, reason: "USDC approval receipt reverted." };
+        const blockNumber = await this.client.getBlockNumber({ cacheTime: 0 });
+        context = `Approval block ${receipt.blockNumber}; simulation block ${blockNumber}; checked ${new Date().toISOString()}; attempt ${attempt + 1}.`;
+        // Receipt availability and "latest" state can disagree during Base preconfirmation.
+        if (blockNumber < receipt.blockNumber) throw new Error("APPROVAL_STATE_NOT_READY: RPC head is behind the approval receipt.");
+        const allowance = await this.client.readContract({
+          address: usdc, abi: erc20Abi, functionName: "allowance",
+          args: [input.walletAddress, input.vaultAddress], blockNumber,
+        });
+        context += ` Allowance ${allowance} raw USDC.`;
+        if (allowance < rawAmount) throw new Error("APPROVAL_STATE_NOT_READY: allowance is not visible at the simulation block.");
+        const simulation = await this.client.simulateContract({
+          address: input.vaultAddress,
+          abi: [...erc4626Abi, ...parseAbi(["error TransferFromReverted()"])],
+          functionName: "deposit",
+          args: [rawAmount, input.walletAddress],
+          account: input.walletAddress,
+          blockNumber,
+        });
+        if (simulation.result <= 0n) return { allPassed: false, reason: `Deposit eth_call returned zero shares. ${context}` };
+        return {
+          allPassed: true,
+          reason: `Deposit eth_call succeeded and previewed ${simulation.result} raw vault shares. ${context}`,
+          simulatedSharesRaw: simulation.result.toString(),
+        };
+      } catch (error) {
+        const reason = error && typeof error === "object" && "shortMessage" in error
+          ? String(error.shortMessage) : error instanceof Error ? error.message : "Deposit eth_call failed.";
+        const approvalStateRace = /APPROVAL_STATE_NOT_READY|0xe65b7a77|TransferFromReverted/.test(reason);
+        if (attempt === 0 && approvalStateRace) {
+          await new Promise(resolve => setTimeout(resolve, 2_000));
+          continue;
+        }
+        return { allPassed: false, reason: `${reason} ${context}` };
       }
-      return {
-        allPassed: true,
-        reason: `ERC-4626 deposit eth_call succeeded and previewed ${simulation.result} raw vault shares.`,
-        simulatedSharesRaw: simulation.result.toString(),
-      };
-    } catch (error) {
-      return {
-        allPassed: false,
-        reason: error instanceof Error ? error.message : "ERC-4626 deposit eth_call failed.",
-      };
     }
+    return { allPassed: false, reason: "Deposit simulation retry exhausted." };
   }
 }

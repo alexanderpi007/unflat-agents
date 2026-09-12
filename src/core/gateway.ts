@@ -393,6 +393,7 @@ export class SigningGateway {
     strategyId: string;
     amountUsdcCents: number;
     idempotencyKey: string;
+    approvalPolicy?: "reuse-only";
   }) {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
@@ -439,6 +440,9 @@ export class SigningGateway {
             approval.transactionHash,
           );
         } else {
+          if (input.approvalPolicy === "reuse-only") {
+            throw new Error("Deposit-only recovery requires an existing exact allowance with approval proof. No approval was signed.");
+          }
           // Approval moves no funds, so the locked check validates the full amount while reserving zero cents.
           const approvalDecision = await this.reserveMandate(
             input.agentId,
@@ -470,6 +474,7 @@ export class SigningGateway {
           walletAddress: agent.walletAddress,
           vaultAddress: vault.address,
           amountUsdcCents: input.amountUsdcCents,
+          approvalTransactionHash: approval.transactionHash,
         });
         if (!simulation.allPassed) {
           const currentMandate = await this.deps.store.getMandate(input.agentId);
@@ -517,7 +522,7 @@ export class SigningGateway {
           "earn.sweep",
           "completed",
           input.amountUsdcCents,
-          `${signingDecision.reason} ${directMorphoLabel} into allowlisted ${vault.label}; AIMorgan's vault picks were ignored. Received ${deposit.sharesReceived} vault shares. ${deposit.deposit.explorerUrl}`,
+          `${signingDecision.reason} ${directMorphoLabel} into allowlisted ${vault.label}; AIMorgan's vault picks were ignored. ${deposit.shareDecimals === null ? `Received ${deposit.sharesReceivedRaw} raw vault shares; formatted shares and decimals unavailable (optional RPC lookup failed). Deposit confirmed.` : `Received ${deposit.sharesReceived} vault shares (${deposit.sharesReceivedRaw} raw).`} ${deposit.deposit.explorerUrl}`,
           deposit.deposit.transactionHash,
         );
         return { vault, preflight: { ...preflight, simulation }, deposit, decision: signingDecision };

@@ -47,8 +47,10 @@ export async function POST(request: Request) {
     requireDemoAdapters(configured, mode);
     running = true;
     let agent;
+    let previousEventCount = 0;
     try {
       agent = await demoAgent(configured, mode);
+      previousEventCount = (await configured.deps.store.listEvents(agent.id)).length;
       if (mode === "live") {
         const claim = await configured.deps.store.claimIdempotency(`dashboard:${runId}`, "Base:transfer5:deposit100");
         if (!claim.fresh) throw new Error("This LIVE run was already submitted. Inspect the statement; do not submit again.");
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
           if (mode === "live") await configured.deps.store.failIdempotency(`dashboard:${runId}`, detail);
           const state = await configured.gateway.state(agent.id);
           emit({ moneyMode: mode, phase: "Failed — inspect statement before retry", error: "Demo failed.", detail,
-            snapshot: state.mandate ? state : undefined });
+            snapshot: state.mandate ? { ...state, events: state.events.slice(previousEventCount) } : undefined });
         } finally { running = false; if (connected) controller.close(); }
       },
       cancel() { connected = false; },

@@ -17,7 +17,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000` and click **Run MOCK money · real Arkiv**. Set the funded `ARKIV_PRIVATE_KEY` in `.env`; the public deployment uses the same testnet-backed path.
+Open `http://localhost:3000` and click **Run the demo →** (simulated money, real Arkiv). Set the funded `ARKIV_PRIVATE_KEY` in `.env`; the public deployment uses the same testnet-backed path.
 
 The dashboard streams each step with runtime timestamps and a real 60-block (nominally two-minute) Arkiv lifetime:
 
@@ -54,6 +54,8 @@ On localhost only, **Run LIVE (Base mainnet)** displays the exact configured rec
 `MOCK_MODE=true` means **mock money**, not mock Arkiv. Missing Arkiv configuration refuses the dashboard run rather than fabricating an entity. Each public run uses an isolated agent/session ID and in-memory accounting with the same displayed wallet; no local record authorizes an action without Arkiv. The public demo consumes testnet gas and depends on the funded creator key/network. It is a hackathon demo, not an authenticated multi-tenant financial service.
 
 ## Four live proofs
+
+Deposit recovery: [confirmed 1 USDC deposit, block 51217477](https://basescan.org/tx/0xd16a7ee70eacd0b22e260bf841c41a0016027d42b58efdb9fc8a6636604a8b0a), receiving `961301103141262720` raw shares (`0.961301103141262720`). An RPC rate limit on the optional decimals lookup prevented the original completion entry; `npm run reconcile:deposit` restores it idempotently from the receipt, without signing, recharging the mandate, or resending the deposit. It updates the local gateway statement, not previously published owner-held Swarm statements. Confirmed deposits now retain receipt evidence if display lookups fail: raw shares and the transaction link remain; formatted shares/decimals are labelled unavailable. Base read clients use three bounded retries with exponential backoff (1s, 2s, 4s; provider Retry-After respected). A keyed `BASE_RPC_URL` can replace the public endpoint in `.env`; never commit its value.
 
 1. **Base mainnet (historical live run):** [0.05 USDC transfer](https://basescan.org/tx/0xb082890bd85d47e8488b0bc268f04a3cd6ce5636a223f300192e033ff36a7c12), [exact approval](https://basescan.org/tx/0x655042d61c625741c24c97588b9af62113c171b0a692d9c4b3684eee1a1a0e6b), [1 USDC Morpho deposit](https://basescan.org/tx/0x3d82d0a3e51fc99655736a02831a2a93599c2628ea58888a6de427202afd313f). Recorded shares: `0.961330596878870251`. These are not the synthetic hashes in the Swarm mock-statement proof.
 2. **Arkiv:** [entity and natural-expiration proof](https://tiramisu.explorer.arkiv.network/entity/0xab606272c6fffe0338e5dfd0cb56e55d8233978499607f1483938d597d12582f), found at block 349722, empty at 349784; gateway refused without delete/extend. See [Mission 02 evidence](./arkiv/submission.md).

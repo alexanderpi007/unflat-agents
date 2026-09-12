@@ -26,6 +26,8 @@ console.log("\nAccelerated mandate scenario");
 for (const [index, step] of steps.entries()) console.log(`${index + 1}. ${step}`);
 console.log(`\nENS identity: ${snapshot.agent.ensName}`);
 console.log(`Mandate spent: $${(snapshot.mandate.spentUsdcCents / 100).toFixed(2)} USDC`);
+console.log(`Mandate cap: $${(snapshot.mandate.maxTotalUsdcCents / 100).toFixed(2)} USDC`);
+console.log(`Budget left at expiry: $${((snapshot.mandate.maxTotalUsdcCents - snapshot.mandate.spentUsdcCents) / 100).toFixed(2)} USDC`);
 console.log(`Encrypted statement: ${snapshot.statementReference}`);
 console.log("Owner decryption key generated locally for this run (not stored by the gateway).");
 console.log("Demo footer — LIVE: none · MOCK: Privy, AIMorgan, Arkiv, Swarm, ENS");

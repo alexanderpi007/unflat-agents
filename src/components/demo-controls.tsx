@@ -5,20 +5,18 @@ import type { DemoMoney } from "@/demo/dashboard-run";
 
 export type DemoPlan = { recipient?: string; vault?: string };
 
-export function DemoControls({ run, running, localLiveAvailable, plan }: {
+export function OwnerControls({ run, running, plan }: {
   run: (mode: DemoMoney, confirmation?: string) => void; running: boolean;
-  localLiveAvailable: boolean; plan?: DemoPlan;
+  plan?: DemoPlan;
 }) {
   const [confirmation, setConfirmation] = useState("");
-  return <>
-    <button onClick={() => run("mock")} disabled={running}>Run MOCK money · real Arkiv →</button>
-    <small>No Base funds move. Real two-minute Arkiv TTL; this is not accelerated.</small>
-    {localLiveAvailable && <div>
-      <p>LIVE Base mainnet: 0.05 USDC to {plan?.recipient ?? "recipient not configured"}; exact 1.00 USDC approval/deposit to {plan?.vault ?? "vault not configured"}. Total 1.05 USDC plus gas. AIMorgan fee waived.</p>
+  return <section className="owner-money-card" id="owner-money" aria-label="Owner money controls">
+      <h2>Run with real money on Base</h2>
+      <p>Total 1.05 USDC plus gas</p>
+      <details><summary>Details</summary><p>Transfer 0.05 USDC to {plan?.recipient ?? "recipient not configured"}.</p><p>Approve exactly 1.00 USDC and deposit into {plan?.vault ?? "vault not configured"}. AIMorgan fee waived.</p></details>
       <label htmlFor="live-confirm">Type CONFIRM for these transactions</label>
       <input id="live-confirm" value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" disabled={running} />
       <button disabled={running || confirmation !== "CONFIRM" || !plan?.recipient || !plan.vault}
         onClick={() => { run("live", confirmation); setConfirmation(""); }}>Run LIVE (Base mainnet)</button>
-    </div>}
-  </>;
+  </section>;
 }

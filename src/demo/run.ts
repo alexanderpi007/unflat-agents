@@ -41,7 +41,7 @@ export async function runDemo(options: { publishMockStatement?: boolean } = {}):
     ownerId: "owner:demo",
     durationSeconds: 120,
     maxPerActionUsdcCents: 100,
-    maxTotalUsdcCents: 105,
+    maxTotalUsdcCents: 120,
   });
   steps.push(`Granted a 2-minute Arkiv-backed mandate expiring at ${mandate.expiresAt}.`);
 

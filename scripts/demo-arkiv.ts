@@ -39,7 +39,7 @@ async function main() {
     ownerId: "owner:arkiv-proof",
     durationSeconds: 120,
     maxPerActionUsdcCents: 100,
-    maxTotalUsdcCents: 105,
+    maxTotalUsdcCents: 120,
   });
   console.log(`Entity ID: ${mandate.arkivEntityKey}`);
   console.log(`Entity explorer: ${mandate.arkivExplorerUrl}`);

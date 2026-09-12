@@ -11,10 +11,10 @@ import {
   encodeFunctionData,
   erc20Abi,
   erc4626Abi,
-  formatUnits,
   http,
 } from "viem";
 import { base } from "viem/chains";
+import { confirmedShares } from "./confirmed-shares";
 import type { WalletPort } from "@/core/ports";
 import type { HexAddress, HexHash, X402Quote } from "@/core/types";
 
@@ -34,7 +34,7 @@ export class PrivyWalletAdapter implements WalletPort {
     baseRpcUrl: string,
   ) {
     this.client = new PrivyClient({ appId, appSecret });
-    this.baseClient = createPublicClient({ chain: base, transport: http(baseRpcUrl) });
+    this.baseClient = createPublicClient({ chain: base, transport: http(baseRpcUrl, { retryCount: 3, retryDelay: 1000 }) });
     this.authorizationContext = {
       authorization_private_keys: [authorizationPrivateKey],
     };
@@ -289,17 +289,15 @@ export class PrivyWalletAdapter implements WalletPort {
     if (sharesReceived === undefined) {
       throw new Error(`Base transaction ${transactionHash} did not emit the expected ERC-4626 Deposit event.`);
     }
-    const shareDecimals = await this.baseClient.readContract({
+    const shares = await confirmedShares(sharesReceived, () => this.baseClient.readContract({
       address: input.vaultAddress,
       abi: erc20Abi,
       functionName: "decimals",
-    });
+    }));
     return {
       transactionHash,
       explorerUrl: `https://basescan.org/tx/${transactionHash}`,
-      sharesReceived: formatUnits(sharesReceived, shareDecimals),
-      sharesReceivedRaw: sharesReceived.toString(),
-      shareDecimals,
+      ...shares,
     };
   }
 }

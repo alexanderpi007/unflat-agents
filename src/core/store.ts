@@ -70,7 +70,14 @@ export class MemoryGatewayStore implements GatewayStore {
   }
 
   async appendEvent(event: StatementEvent): Promise<void> {
-    await this.locked(() => this.events.push(structuredClone(event)));
+    await this.locked(() => {
+      if (this.events.some((existing) => existing.id === event.id || (
+        event.action === "earn.sweep" && event.status === "completed" && event.reference
+        && existing.agentId === event.agentId && existing.action === event.action
+        && existing.status === event.status && existing.reference === event.reference
+      ))) return;
+      this.events.push(structuredClone(event));
+    });
   }
 
   async listEvents(agentId: string): Promise<StatementEvent[]> {

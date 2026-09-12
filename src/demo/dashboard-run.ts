@@ -64,7 +64,7 @@ export async function runDashboardSequence(runtime: GatewayRuntime, agent: Agent
     if (!preview.preflight.allPassed) throw new Error(preview.preflight.reason);
   }
   await gateway.grantMandate({ agentId: agent.id, ownerId: `owner:${mode}-dashboard`, durationSeconds: 120,
-    maxPerActionUsdcCents: 100, maxTotalUsdcCents: 105 });
+    maxPerActionUsdcCents: 100, maxTotalUsdcCents: 120 });
   const before = await deps.arkiv.findValidMandates(agent.id);
   if (!before.found) throw new Error("New Arkiv mandate not queryable; no spend attempted.");
   await update("Mandate found on Tiramisu", before);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { RetrievedStatement } from "./retrieved-statement";
 import { useSwarmId } from "@/browser/use-swarm-id";
 import { swarmCall, swarmErrorDetail } from "@/browser/swarm-errors";
 import { encryptedReference, plainStatement, statementBytes, type StatementInput } from "@/browser/owner-statement";
@@ -55,7 +56,7 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
         const batch = await swarmCall("SwarmIdClient.getPostageBatch (optional metadata)", () => client.getPostageBatch());
         const ttl = batch?.batchTTL;
         if (ttl != null) {
-          setUploadDetail((text) => `${text} · drive TTL ${(ttl / 86400).toFixed(2)} days`);
+          setUploadDetail((text) => `${text} · estimated storage remaining: ${(ttl / 86400).toFixed(2)} days`);
         }
       } catch (cause) {
         setUploadDetail((text) => `${text} · Upload succeeded; retention metadata unavailable: ${swarmErrorDetail("getPostageBatch", cause)}`);
@@ -76,8 +77,13 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
   }
 
   return (
-    <article className="statement-card panel owner-record">
-      <div className="section-head"><div><span>OWNER RECORD</span><h3>Encrypted on Swarm.</h3></div><b>SWARM ID</b></div>
+    <article className="statement-card panel owner-record" id="owner-statement">
+      <div className="section-head"><div><span>05 / THE OWNER’S STATEMENT</span><h3>The owner keeps the record.</h3></div><b>SWARM ID</b></div>
+      <p>Save an encrypted copy to your own Swarm drive. Retrieve it in another browser with your private reference—not an account on our gateway.</p>
+      {statement && <div className="statement-preview"><strong>{statement.agent.displayName}’s statement</strong>
+        <p>{statement.events.length} recorded decisions · Budget ${(statement.mandate.maxTotalUsdcCents / 100).toFixed(2)} · Used ${(statement.mandate.spentUsdcCents / 100).toFixed(2)}</p>
+        <p>{statement.events.some(event => event.status === "refused") ? "Includes the gateway’s refusal and its reason." : "Actions are being recorded as the demo runs."}</p>
+      </div>}
       {/* The click must happen inside the proxy so its popup retains the iframe as opener. */}
       <div id="owner-swarm-proxy" style={{ height: 56 }} />
       <small>Connect using the Swarm ID button above. Allow its popup, then approve this site's origin and select your funded drive.</small>
@@ -86,23 +92,27 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
       {identity && !canUpload && <p>Choose your funded drive in Swarm ID. Upload status: {swarm.connection?.uploadUnavailableReason ?? "no usable owner stamp"}.</p>}
       {swarm.error && <p role="alert">{swarm.error} <button type="button" onClick={swarm.retry}>Retry Swarm ID</button></p>}
       <label className="deferred-option"><input type="checkbox" checked={deferred} onChange={(event) => setDeferred(event.target.checked)} /> Deferred upload mode</label>
-      <small>On by default to match the working Swarm demo: native encryption + deferred upload over HTTP. Required for Bee dev mode.</small>
+      <details><summary>Upload details</summary>
+        <small>Native encryption and deferred HTTP upload. Deferred mode is required for Bee dev mode.</small>
+      </details>
       <button type="button" onClick={publish} disabled={!swarm.ready || !canUpload || !statement || !!busy}>Publish statement</button>
       {!statement && <p>Run the demo to prepare a statement. Retrieval is available without a demo run.</p>}
       {statement?.source === "mock-demo" && <p>Statement: mock agent actions. Publishing uses your real Swarm drive.</p>}
-      <label htmlFor="owner-reference">SECRET SWARM REFERENCE · 128 HEX</label>
+      <div hidden={!reference}>
+      <label htmlFor="owner-reference">YOUR PRIVATE RETRIEVAL REFERENCE</label>
       <textarea id="owner-reference" readOnly rows={4} value={reference} placeholder="Appears after publishing" autoComplete="off" spellCheck={false} />
+      </div>
       {reference && <button type="button" onClick={() => void perform("Copy", async () => {
         await navigator.clipboard.writeText(reference); setCopied(true);
       })}>{copied ? "Copied" : "Copy secret reference"}</button>}
       {uploadDetail && <p role="status">{uploadDetail}</p>}
-      <p>Save the full reference privately: it contains the decryption key. It stays in this tab and is never sent to our gateway.</p>
+      <p>Keep the full reference private: anyone with it can read your statement. It contains the decryption key, stays in this tab, and is never sent to our gateway.</p>
       <label htmlFor="retrieve-reference">RETRIEVE FROM SWARM</label>
       <textarea id="retrieve-reference" rows={4} value={input} onChange={(event) => setInput(event.target.value)} placeholder="Paste a 128-hex reference" autoComplete="off" spellCheck={false} />
       <button type="button" onClick={retrieve} disabled={!swarm.ready || !identity || !!busy || !input.trim()}>Retrieve</button>
       {busy && <p role="status">{busy} in progress…</p>}
       {error && <p className="error" role="alert">{error}</p>}
-      {retrieved && <><label>PLAIN STATEMENT · RETRIEVED FROM SWARM</label><pre className="retrieved-statement">{retrieved}</pre></>}
+      {retrieved && <RetrievedStatement text={retrieved} />}
     </article>
   );
 }

@@ -153,7 +153,7 @@ async function main() {
     ownerId: "owner:live-demo",
     durationSeconds: 120,
     maxPerActionUsdcCents: depositUsdcCents,
-    maxTotalUsdcCents: requiredUsdcCents,
+    maxTotalUsdcCents: 120,
   });
 
   const transfer = await runtime.gateway.transferUsdc({
