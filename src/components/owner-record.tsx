@@ -79,20 +79,20 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
   return (
     <article className="statement-card panel owner-record" id="owner-statement">
       <div className="section-head"><div><span>05 / THE OWNER’S STATEMENT</span><h3>The owner keeps the record.</h3></div><b>SWARM ID</b></div>
-      <p>Save an encrypted copy to your own Swarm drive. Retrieve it in another browser with your private reference—not an account on our gateway.</p>
-      {statement && <div className="statement-preview"><strong>{statement.agent.displayName}’s statement</strong>
+      <p>Save it encrypted to your drive; retrieve it in any browser.</p>
+      {statement && <details className="statement-preview"><summary>{statement.agent.displayName}’s statement · {statement.events.length} decisions</summary>
         <p>{statement.events.length} recorded decisions · Budget ${(statement.mandate.maxTotalUsdcCents / 100).toFixed(2)} · Used ${(statement.mandate.spentUsdcCents / 100).toFixed(2)}</p>
         <p>{statement.events.some(event => event.status === "refused") ? "Includes the gateway’s refusal and its reason." : "Actions are being recorded as the demo runs."}</p>
-      </div>}
+      </details>}
       {/* The click must happen inside the proxy so its popup retains the iframe as opener. */}
       <div id="owner-swarm-proxy" style={{ height: 56 }} />
-      <small>Connect using the Swarm ID button above. Allow its popup, then approve this site's origin and select your funded drive.</small>
       <p role="status">{identity ? `Connected: ${identity.name} · ${canUpload ? "owner drive ready" : "uploads unavailable"}`
         : swarm.ready ? "Connect your Swarm ID account to use your drive." : "Loading Swarm ID…"}</p>
       {identity && !canUpload && <p>Choose your funded drive in Swarm ID. Upload status: {swarm.connection?.uploadUnavailableReason ?? "no usable owner stamp"}.</p>}
       {swarm.error && <p role="alert">{swarm.error} <button type="button" onClick={swarm.retry}>Retry Swarm ID</button></p>}
       <label className="deferred-option"><input type="checkbox" checked={deferred} onChange={(event) => setDeferred(event.target.checked)} /> Deferred upload mode</label>
       <details><summary>Upload details</summary>
+        <small>Allow the Swarm ID popup, approve this site, and select your funded drive.</small>
         <small>Native encryption and deferred HTTP upload. Deferred mode is required for Bee dev mode.</small>
       </details>
       <button type="button" onClick={publish} disabled={!swarm.ready || !canUpload || !statement || !!busy}>Publish statement</button>
@@ -106,7 +106,9 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
         await navigator.clipboard.writeText(reference); setCopied(true);
       })}>{copied ? "Copied" : "Copy secret reference"}</button>}
       {uploadDetail && <p role="status">{uploadDetail}</p>}
-      <p>Keep the full reference private: anyone with it can read your statement. It contains the decryption key, stays in this tab, and is never sent to our gateway.</p>
+      {reference && <a className="proof-chip" href="#retrieve-reference" title="Encrypted upload returned a reference; retrieve below to verify">Swarm ↗</a>}
+      <p>Keep your reference private: it unlocks your statement.</p>
+      <details><summary>What stays yours</summary><p>The reference contains the decryption key, stays in this tab, and never reaches our gateway. Anyone with it can read your statement.</p></details>
       <label htmlFor="retrieve-reference">RETRIEVE FROM SWARM</label>
       <textarea id="retrieve-reference" rows={4} value={input} onChange={(event) => setInput(event.target.value)} placeholder="Paste a 128-hex reference" autoComplete="off" spellCheck={false} />
       <button type="button" onClick={retrieve} disabled={!swarm.ready || !identity || !!busy || !input.trim()}>Retrieve</button>

@@ -13,7 +13,7 @@ export function ActionFeed({ events, mockMoney, history = false }: { events: Sta
   };
   return <article className="timeline panel">
     <div className="section-head"><div><span>{history ? "HISTORY" : "03 / THE ACTIONS"}</span><h3>{history ? "Earlier recorded decisions" : "What Atlas does with permission"}</h3></div></div>
-    {!events.length && <p>No actions yet. Start the demo to grant a budget, watch Atlas act, then see permission expire.</p>}
+    {!events.length && <p>Every action leaves a record.</p>}
     <div className="events">{events.filter(event => history || event.status !== "refused").map(event => {
       const eventMock = history ? /MOCK|simulated/i.test(event.reason) : mockMoney;
       const simulated = eventMock && ["usdc.transfer", "earn.approve", "earn.sweep", "aimorgan.strategize"].includes(event.action);
@@ -24,7 +24,7 @@ export function ActionFeed({ events, mockMoney, history = false }: { events: Sta
       return <div className="event" key={event.id}>
         <time>{history ? new Date(event.at).toLocaleString("en-GB") : new Date(event.at).toLocaleTimeString("en-GB")}</time><i className={event.status} />
         <div><strong>{event.status === "refused" ? "Refused: " : event.status === "failed" ? "Failed: " : simulated ? "Simulated: " : ""}{titles[event.action] ?? "Gateway decision recorded"}</strong>
-          {proof && <a href={proof} target="_blank" rel="noreferrer">View {event.action === "mandate.grant" ? "expiring permission" : "transaction"} ↗</a>}
+          {proof && <a className="proof-chip" title={reference.split("/").at(-1)} href={proof} target="_blank" rel="noreferrer">{event.action === "mandate.grant" ? "Arkiv" : event.action.startsWith("ens.") ? "ENS" : "Base"} ↗</a>}
           <details><summary>Decision details</summary><p>{event.action} · {event.status}</p><p>{event.reason}</p></details>
         </div>
         <span>{event.amountUsdcCents ? `$${(event.amountUsdcCents / 100).toFixed(2)}` : "—"}</span>

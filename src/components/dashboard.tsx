@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ActionFeed } from "./action-feed";
-import { MandateTimer } from "./mandate-timer";
 import { RefusalResult } from "./refusal-result";
 import { ProofFooter } from "./proof-footer";
 import { OwnerRecord } from "./owner-record";
@@ -171,14 +170,14 @@ export function Dashboard() {
       {localLiveAvailable && ownerMode && <OwnerControls run={run} running={running} plan={plan} />}
       <section className="hero" id="top">
         <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
-          <h1>A name. A budget.<br />An <em>expiry.</em></h1>
-          <p className="lede">An agent gets a bank account with a name, a budget that expires, yield on idle funds, and a statement its owner keeps. When time runs out, the next action is refused. Nobody revokes anything.</p>
+          <h1>A bank account.<br /><em>Built to expire.</em></h1>
+          <p className="lede">An agent gets a name, a timed budget, yield, and a statement its owner keeps.</p>
         </div>
         <section className="run-panel demo-object" aria-label="Two-minute demo">
           <h2>Watch a two-minute budget expire.</h2>
           <button onClick={() => void run("mock")} disabled={running}>Run the demo →</button>
           <span className="demo-mode-pill">{result?.moneyMode === "live" ? "Real money · live Arkiv" : "Simulated money · live Arkiv"}</span>
-          <DemoStepper events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
+          <DemoStepper key={displayedMandate?.id ?? "ready"} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
             confirmedExpired={mandateExpired} running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
           {error && <div className="demo-error"><p role="alert">Demo interrupted. Review the details before retrying.</p><details><summary>Error details</summary><p>{error}</p></details></div>}
         </section>
@@ -191,9 +190,9 @@ export function Dashboard() {
           <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2><p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p></div>
           <div className="identity-summary">
             <p>{nameVerified ? "Name verified: it points to Atlas’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
-            <p>Wallet: {short(displayedAgent?.walletAddress ?? walletAddress) || "Loading…"} · The same wallet is reused across dashboard runs.</p>
-            {displayedAgent?.ensExplorerUrl && <a href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">View ENS proof ↗</a>}
+            {displayedAgent?.ensExplorerUrl && <a className="proof-chip" title={displayedAgent.ensRegistrationTransaction ?? displayedAgent.ensName} href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">ENS ↗</a>}
             <details><summary>Identity details</summary>
+              <p>The same wallet is reused across runs: {short(displayedAgent?.walletAddress ?? walletAddress) || "Loading…"}.</p>
               <p>Wallet: {displayedAgent?.walletAddress}</p><p>Resolved from ENS: {displayedAgent?.ensResolvedAddress ?? "Not resolved"}</p>
               <p>ENSv2 · Sepolia</p>
               {displayedAgent?.ensRegistrationTransaction && <a href={`https://sepolia.etherscan.io/tx/${displayedAgent.ensRegistrationTransaction}`} target="_blank" rel="noreferrer">Registration transaction ↗</a>}
@@ -207,12 +206,10 @@ export function Dashboard() {
           <p>Permission ends automatically. The owner does not need to revoke it.</p>
           <div className="budget-layout">
             <article className={`mandate-card ${mandateExpired ? "expired" : "active"}`}>
-              <MandateTimer expiresAt={displayedMandate?.expiresAt} confirmedExpired={mandateExpired}
-                running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
-              <p>Allowed: send USDC, request advice, deposit into an approved savings vault.</p>
-              <p>Maximum per action: {money(displayedMandate?.maxPerActionUsdcCents ?? 100)}.</p>
-              {displayedMandate?.arkivExplorerUrl && <a href={displayedMandate.arkivExplorerUrl} target="_blank" rel="noreferrer">View expiring permission ↗</a>}
+              <strong className="permission-state">{mandateExpired ? "EXPIRED" : running ? "IN PROGRESS" : "TWO MINUTES"}</strong>
+              {displayedMandate?.arkivExplorerUrl && <a className="proof-chip" title={displayedMandate.arkivEntityKey} href={displayedMandate.arkivExplorerUrl} target="_blank" rel="noreferrer">Arkiv ↗</a>}
               <details><summary>Permission details</summary><p>Arkiv entity: {displayedMandate?.arkivEntityKey ?? "Not created yet"}</p>
+                <p>Allowed: send USDC, request advice, save in an approved vault. Maximum per action: {money(displayedMandate?.maxPerActionUsdcCents ?? 100)}.</p>
                 <p>Expiry block: {displayedMandate?.arkivExpiresAtBlock ?? "—"}. Authorization follows fresh Arkiv queries, not the display clock.</p>
                 {result?.query && <p>Block {result.query.blockNumber.toString()} · found={String(result.query.found)}</p>}
               </details>
@@ -221,7 +218,7 @@ export function Dashboard() {
               <strong>{money(remaining)}</strong><span>Budget {mandateExpired ? "left when time ran out" : "remaining"}</span>
               <div className="meter"><i style={{ width: `${(remaining / mandateCap) * 100}%` }} /></div>
               <div className="balance-foot"><span>Used {money(displayedMandate?.spentUsdcCents ?? 0)}</span><span>Budget {money(mandateCap)}</span></div>
-              <p>This is permission to use funds, not the wallet balance. Moving money into savings uses budget too.</p>
+              <details><summary>Budget details</summary><p>This is permission to use funds, not the wallet balance. Moving money into savings uses budget too.</p></details>
             </article>
           </div>
         </section>
@@ -233,10 +230,9 @@ export function Dashboard() {
         </details>}
         <article className="rail-card panel story-section">
           <h3>Idle money can keep working.</h3>
-          <p>Atlas’s approved savings vault: {vaultRate?.vault.label ?? "Steakhouse Prime USDC"}.</p>
-          <p className="rate-inline">Variable annualized rate: <strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong></p>
-          <p>{vaultRate?.source === "morpho-api" ? "Source: Morpho API · realized six-hour average. Not a guaranteed return." : vaultRateError ? "Rate unavailable. No invented fallback." : "No live rate verified yet."}</p>
-          <details><summary>Savings details</summary><p>{directMorphoLabel}</p><p>{aimorganFeeWaivedLabel}</p><p>AIMorgan recommends. The gateway only deposits into approved vaults.</p></details>
+          <p className="rate-inline"><strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong> variable APY · {vaultRate?.source === "morpho-api" ? "Morpho API" : "rate not verified"}</p>
+          <a className="proof-chip" title={vaultRate?.vault.address} href={`https://basescan.org/address/${vaultRate?.vault.address ?? "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9"}`} target="_blank" rel="noreferrer">Base ↗</a>
+          <details><summary>Savings details</summary><p>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}. {vaultRateError ? "Rate unavailable. No invented fallback." : "Realized six-hour average; not a guaranteed return."}</p><p>{directMorphoLabel}</p><p>{aimorganFeeWaivedLabel}</p><p>AIMorgan recommends. The gateway only deposits into approved vaults.</p></details>
         </article>
 
         <RefusalResult refusal={refusal} expired={mandateExpired} remaining={remaining} running={running} error={!!error} />

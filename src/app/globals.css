@@ -4,7 +4,7 @@
   --panel: #faf8f1;
   --line: #c9c6bc;
   --muted: #66675f;
-  --acid: #c8ff3d;
+  --acid: #0e7049;
   --orange: #ff5a36;
   --green: #0e7049;
 }
@@ -266,6 +266,69 @@ footer p { margin: 0; color: var(--muted); }
   .step-waiting .step-node, .step-refused .step-node { width: 58px; font-size: 10px; }
 }
 .story-page .meter i { transition: none; }
+.story-page { font-size: 15px; }
+.story-page .topbar { height: 64px; padding: 0 32px; border-color: var(--line); }
+.story-page .hero { min-height: calc(100svh - 64px); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; padding: 48px max(32px, calc((100vw - 1200px) / 2)); border-bottom: 1px solid var(--line); }
+.story-page h1 { font-size: 48px; line-height: 1.08; }
+.story-page h2, .story-page .demo-object h2 { font-size: 28px; line-height: 1.2; }
+.story-page h3 { font-size: 18px; }
+.story-page .lede { font-size: 18px; line-height: 1.4; margin: 24px 0 0; max-width: 480px; }
+.story-page .eyebrow { font-size: 12px; margin-bottom: 24px; }
+.story-page .run-panel { box-shadow: none; border: 0; background: transparent; }
+.story-page .demo-object { padding: 24px 0; }
+.story-page .demo-object > button { background: var(--green); color: var(--panel); border: 0; font-size: 18px; padding: 24px 16px; }
+.story-page .demo-object > button:hover { background: var(--ink); color: var(--paper); }
+.demo-mode-pill { margin-top: 8px; font-size: 12px; border: 0; }
+.demo-empty { font-size: 15px; margin-top: 24px; color: var(--muted); }
+.progress-object { position: relative; }
+.demo-stepper { position: relative; margin-top: 24px; }
+.demo-stepper.has-clock { padding-bottom: 272px; }
+.demo-stepper li:last-child { position: static; }
+.demo-stepper li:last-child::before { width: 25%; left: 62.5%; }
+.demo-stepper .step-refused .step-node { width: 36px; border-radius: 50%; animation: none; color: var(--orange); background: var(--ink); border-color: var(--ink); }
+.demo-stepper .step-waiting .step-node { width: 36px; border-radius: 50%; font-size: 18px; }
+.hero-clock { position: absolute; top: 104px; left: 50%; transform: translateX(-50%); width: 256px; height: 256px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--green); animation: clock-opens 240ms ease-out both; }
+@keyframes clock-opens { from { opacity: 0; transform: translateX(-50%) scale(.8); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+.hero-clock svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--line); stroke-width: 1; transform: rotate(-90deg); }
+.hero-clock .clock-progress { stroke: var(--green); stroke-width: 2; }
+.hero-clock strong { position: relative; font-size: 96px; font-weight: 500; letter-spacing: -.08em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hero-clock .clock-message { font-size: 28px; letter-spacing: -.03em; }
+.hero-clock > span { font-size: 12px; letter-spacing: .04em; margin-top: 8px; }
+.hero-refused { margin-top: 24px; padding: 24px; background: var(--ink); color: var(--paper); border-left: 4px solid var(--orange); text-align: left; position: relative; animation: refusal-arrives 320ms ease-out both; }
+.hero-refused > strong { color: var(--orange); font-size: 28px; letter-spacing: .04em; }
+.hero-refused p { font-size: 18px; line-height: 1.4; margin: 8px 0 0; }
+.hero-refused .dismiss-refusal { display: none; }
+.story-page .story-section, .story-page .story-content > .timeline, .story-page .story-content > .owner-record { border: 0; border-top: 1px solid var(--line); padding: 40px 0; margin: 0; background: transparent; }
+.story-content { padding: 48px 32px; }
+.story-page .panel-label, .story-page .section-head span { font-size: 12px; margin-bottom: 16px; }
+.story-page .identity-card { gap: 16px; }
+.story-page .identity-summary p { margin: 0 0 8px; }
+.story-page .avatar { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.story-page .brand-mark { color: var(--paper); }
+.budget-layout { gap: 32px; margin-top: 24px; }
+.permission-state { display: block; font-size: 18px; margin-bottom: 16px; }
+.story-page .balance-card strong { font-size: 48px; }
+.story-page details { margin-top: 8px; font-size: 15px; }
+.story-page details p { max-width: 720px; }
+.story-page .proof-chip { display: inline-flex; align-items: center; padding: 4px 8px; margin: 8px 8px 0 0; border: 1px solid var(--line); border-radius: 24px; font: 600 12px/1.5 Arial, sans-serif; text-decoration: none; color: var(--green); min-height: 32px; }
+.story-page .proof-chip:hover { border-color: var(--green); background: var(--panel); }
+.story-page .event div strong { display: block; font-size: 15px; }
+.story-page .event div a.proof-chip { font-size: 12px; }
+.story-page .events { border-color: var(--line); margin-top: 24px; }
+.story-page .event { padding: 16px 0; gap: 16px; }
+.story-page .event time { font-size: 12px; }
+.story-page .refusal-stage { min-height: 0; border: 0; border-top: 1px solid var(--line); margin: 0; padding: 40px 0; background: transparent; color: var(--ink); }
+.story-page .refusal-stage h2 { font-size: 28px; }
+.story-page .refusal-complete .panel-label { color: var(--muted); }
+.story-page .refusal-complete summary { color: var(--green); }
+.story-page .refusal-reveal { animation: none; }
+.story-page .refusal-stage .refusal-status { background: transparent; color: var(--orange); padding: 0; font-size: 15px; }
+.story-page .proof-list { margin: 24px 0; gap: 32px; }
+.story-page .owner-record button { background: var(--green); color: var(--panel); border: 0; }
+.story-page .owner-record .statement-preview { border: 0; padding: 0; margin: 16px 0; }
+.story-page .owner-record .section-head > b { display: none; }
+.story-page .owner-record > p { font-size: 15px; line-height: 1.4; }
+@media (prefers-reduced-motion: reduce) { .hero-refused, .hero-clock { animation: none; } }
 .story-page .hero { background-image: none; }
 .story-page footer { font: 13px/1.5 Arial, sans-serif; gap: 20px; }
 .retrieved-statement li { padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -285,6 +348,22 @@ footer p { margin: 0; color: var(--muted); }
   .story-page .topbar a { font-size: 14px; }
   .story-page .mobile-time-summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--paper); z-index: 10; font-size: 14px; }
   .mobile-time-summary b { font: 700 24px/1.4 monospace; }
-  .story-page { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .story-page { padding-bottom: calc(176px + env(safe-area-inset-bottom)); }
   .story-page :is(a, button, input, textarea, summary) { scroll-margin-bottom: 100px; }
+}
+@media (max-width: 700px) {
+  .story-page .topbar { padding: 0 16px; min-height: 64px; }
+  .story-page .hero { grid-template-columns: 1fr; gap: 24px; padding: 32px 16px; align-content: center; }
+  .story-page h1 { font-size: 48px; }
+  .story-page .lede { font-size: 15px; margin-top: 16px; }
+  .story-page .eyebrow { margin-bottom: 16px; }
+  .story-page .demo-object { padding: 0; }
+  .story-page .demo-object h2 { font-size: 18px; margin-bottom: 16px; }
+  .story-page .run-panel { box-shadow: none; }
+  .story-content { padding: 32px 16px; }
+  .story-page .story-section, .story-page .story-content > .timeline, .story-page .story-content > .owner-record, .story-page .refusal-stage { padding: 32px 0; }
+  .hero-refused:not(.banner-dismissed) { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding: 16px 56px calc(16px + env(safe-area-inset-bottom)) 16px; border-left: 0; border-top: 2px solid var(--orange); }
+  .hero-refused p { font-size: 15px; }
+  .hero-refused .dismiss-refusal { display: grid; place-items: center; position: absolute; right: 8px; top: 8px; width: 40px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--paper); font-size: 28px; }
+  .hero-refused.banner-dismissed .dismiss-refusal { display: none; }
 }
