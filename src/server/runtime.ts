@@ -233,7 +233,7 @@ export function createApplicationRuntime(options: { clock?: Clock; store?: Gatew
     aiMorganX402,
     demoPaymentRecipient: isAddress(value("DEMO_PAYMENT_RECIPIENT") ?? "")
       ? value("DEMO_PAYMENT_RECIPIENT") as HexAddress
-      : undefined,
+      : globalMockOverride ? "0x000000000000000000000000000000000000dEaD" : undefined,
   };
   const { wallet: signingWallet, ...nonSigningDeps } = deps;
   return {

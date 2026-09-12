@@ -8,8 +8,17 @@ const adapterKeys = ["privy", "aiMorgan", "arkiv", "swarm", "ens"] as const;
 afterEach(() => vi.unstubAllEnvs());
 
 describe("per-adapter runtime resolution", () => {
+  it("the mock gateway can spend simulated money without a configured real recipient", async () => {
+    vi.stubEnv("DEMO_PAYMENT_RECIPIENT", "");
+    const result = createApplicationRuntime({ fullyMocked: true, store: new MemoryGatewayStore() });
+    const agent = await result.gateway.createAgent("Test");
+    await result.gateway.grantMandate({ agentId: agent.id, ownerId: "test", durationSeconds: 120, maxPerActionUsdcCents: 100, maxTotalUsdcCents: 105 });
+    const transfer = await result.gateway.transferUsdc({ agentId: agent.id, recipient: result.deps.demoPaymentRecipient!, amountUsdcCents: 5, idempotencyKey: "mock-no-recipient" });
+    expect(transfer.transfer.source).not.toBe("privy-live");
+  });
   it("MOCK_MODE mocks money but keeps funded Arkiv and browser Swarm", () => {
     vi.stubEnv("MOCK_MODE", "true");
+    vi.stubEnv("DEMO_PAYMENT_RECIPIENT", "");
     vi.stubEnv("ARKIV_PRIVATE_KEY", `0x${"01".repeat(32)}`);
 
     const result = createApplicationRuntime({ store: new MemoryGatewayStore() });
@@ -19,6 +28,7 @@ describe("per-adapter runtime resolution", () => {
     expect(result.health.adapters.aiMorgan.mode).toBe("mock");
     expect(result.health.adapters.arkiv.mode).toBe("live");
     expect(result.health.adapters.swarm.mode).toBe("browser");
+    expect(result.deps.demoPaymentRecipient).toBe("0x000000000000000000000000000000000000dEaD");
     const offline = createApplicationRuntime({ fullyMocked: true, store: new MemoryGatewayStore() });
     for (const key of adapterKeys) expect(offline.health.adapters[key].mode).toBe("mock");
   });

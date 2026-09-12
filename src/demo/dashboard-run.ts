@@ -14,7 +14,6 @@ export type DashboardUpdate = {
 
 export function dashboardRuntime(mode: DemoMoney) {
   const runtime = createApplicationRuntime({ mockMoney: mode === "mock", store: mode === "mock" ? new MemoryGatewayStore() : undefined });
-  if (mode === "mock" && !runtime.deps.demoPaymentRecipient) runtime.deps.demoPaymentRecipient = "0x000000000000000000000000000000000000dEaD";
   return runtime;
 }
 
