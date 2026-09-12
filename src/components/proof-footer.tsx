@@ -1,18 +1,19 @@
 import type { ArkivMandateQuery, Mandate, RuntimeHealth } from "@/core/types";
 
 const repo = "https://github.com/alexanderpi007/unflat-agents/blob/main";
-const deposit = "0xf110d5257156592771910722466a29d7614e3bd07372fe635c0726ad90e91b3c";
 
-export function ProofFooter({ liveMoney, started, nameVerified, mandate, before, after, health, children }: {
+export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameVerified, mandate, before, after, health, children }: {
+  deposit?: string;
+  showingRealRun: boolean;
   liveMoney: boolean; started: boolean; nameVerified: boolean; mandate?: Mandate;
   before?: ArkivMandateQuery; after?: ArkivMandateQuery; health?: RuntimeHealth; children: React.ReactNode;
 }) {
   return <section className="story-section proof-footer" id="proofs" aria-labelledby="proofs-heading">
     <p className="panel-label">06 / VERIFY IT YOURSELF</p><h2 id="proofs-heading">What is real?</h2>
-    <p>Public demo: simulated money, real expiring permission.</p>
+    <p>Real evidence first. Try a simulation without moving funds.</p>
     <div className="proof-list">
-      <article><h3>Money</h3><p>{started && liveMoney ? "This run uses real Base funds." : "Money is simulated here; this proof is an earlier real deposit."}</p>
-        <a className="proof-chip" title={deposit} href={`https://basescan.org/tx/${deposit}`} target="_blank" rel="noreferrer">Base ↗</a>
+      <article><h3>Money</h3><p>{showingRealRun ? "Real run shown above; simulations never broadcast." : started && liveMoney ? "This run uses real Base funds." : "Simulation shown above; simulations never broadcast."}</p>
+        {deposit && <a className="proof-chip" title={deposit} href={`https://basescan.org/tx/${deposit}`} target="_blank" rel="noreferrer">Base ↗</a>}
       </article>
       <article><h3>Permission</h3><p>{mandate ? "A real entity disappears when permission expires." : health?.adapters.arkiv.mode === "live" ? "Each run creates expiring permission on Tiramisu." : "Live connection not yet verified."}</p>
         <a className="proof-chip" title={mandate?.arkivEntityKey ?? "Earlier Mission 02 evidence"} href={mandate?.arkivExplorerUrl ?? `${repo}/arkiv/submission.md#mission-02-evidence`} target="_blank" rel="noreferrer">Arkiv ↗</a>

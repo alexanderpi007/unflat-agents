@@ -2,6 +2,7 @@ import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { runDemo } from "../src/demo/run";
 import { proxyFixture } from "../tests/swarm-proxy-fixture";
+import realRun from "../public/real-run.json";
 
 // Isolated presentation fixtures only: no live API POST, wallet, or storage calls.
 const directory = process.argv[2];
@@ -36,10 +37,10 @@ for (const width of [1440, 390]) {
   }, { snapshot: demo.snapshot });
   const page = await context.newPage();
   await page.goto("http://localhost:3107");
-  await page.getByText("Press run. Two minutes. Watch it stop.").waitFor();
+  await page.getByText(realRun.label).waitFor();
   await page.screenshot({ path: `${directory}/${width}-before.png` });
   console.log(JSON.stringify({ width, state: "before", overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), heroBottom: await page.locator(".hero").evaluate(el => el.getBoundingClientRect().bottom) }));
-  await page.getByRole("button", { name: "Run the demo →", exact: true }).click();
+  await page.getByRole("button", { name: "Run a simulation →", exact: true }).click();
   await page.locator(".hero-clock").waitFor();
   await page.screenshot({ path: `${directory}/${width}-during.png`, animations: "disabled" });
   await page.locator(".hero-refused").waitFor();

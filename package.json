@@ -16,6 +16,7 @@
     "demo:arkiv": "node --import tsx scripts/demo-arkiv.ts",
     "demo:earn": "node --import tsx scripts/demo-earn.ts",
     "reconcile:deposit": "node --import tsx scripts/reconcile-deposit.ts",
+    "export:real-run": "node --import tsx scripts/export-real-run.ts",
     "demo:mock": "node --import tsx scripts/demo-mock.ts",
     "verify:mandate": "node --import tsx scripts/verify-mandate.ts",
     "mcp": "node --import tsx src/mcp/server.ts"

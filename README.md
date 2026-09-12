@@ -17,7 +17,9 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000` and click **Run the demo →** (simulated money, real Arkiv). Set the funded `ARKIV_PRIVATE_KEY` in `.env`; the public deployment uses the same testnet-backed path.
+The dashboard opens on the committed, read-only LIVE evidence in [`public/real-run.json`](public/real-run.json). **Run a simulation →** temporarily replaces it with simulated money and real Arkiv expiry; **Back to the real run** restores the archive. Loading the archive sends no transactions and never authorizes spending.
+
+For a new video take, use localhost **Owner mode** and its unchanged LIVE confirmation. After the complete run (including expiry/refusal), run `npm run export:real-run`, review `public/real-run.json`, commit it, and redeploy. The exporter reads the local gateway store, rejects incomplete/mock runs, and whitelists public fields; wallet-service IDs, mandate openings/secrets, idempotency data and Swarm references are not exported. It never signs or broadcasts. Public deployments only read this file; they cannot refresh it from a private store. Set the funded `ARKIV_PRIVATE_KEY` in `.env` for simulations with real expiry.
 
 The dashboard streams each step with runtime timestamps and a real 60-block (nominally two-minute) Arkiv lifetime:
 

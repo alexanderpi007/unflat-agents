@@ -9,6 +9,7 @@ import { OwnerControls, type DemoPlan } from "./demo-controls";
 import { DemoStepper } from "./demo-stepper";
 import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
+import type { RealRun } from "@/demo/export-real-run";
 import { aimorganFeeWaivedLabel, directMorphoLabel } from "@/core/labels";
 import type {
   Agent,
@@ -38,8 +39,10 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const short = (value: string, width = 9) =>
   value.length > width * 2 ? `${value.slice(0, width)}…${value.slice(-width)}` : value;
 
-export function Dashboard() {
-  const [result, setResult] = useState<DemoResult>();
+export function Dashboard({ realRun }: { realRun: RealRun }) {
+  const archivedResult: DemoResult = { snapshot: realRun.snapshot, moneyMode: "live", expired: true, phase: "Recorded LIVE run · read-only proof" };
+  const [result, setResult] = useState<DemoResult>(archivedResult);
+  const [showingRealRun, setShowingRealRun] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdateAt, setLastUpdateAt] = useState<number>();
@@ -101,6 +104,7 @@ export function Dashboard() {
   async function run(mode: DemoMoney, confirmation?: string) {
     if (runLock.current) return;
     runLock.current = true;
+    setShowingRealRun(false);
     setPreviousEvents(previous => mergeEventHistory(previous, displayedEvents));
     setRunning(true);
     setError("");
@@ -174,11 +178,17 @@ export function Dashboard() {
           <p className="lede">An agent gets a name, a timed budget, yield, and a statement its owner keeps.</p>
         </div>
         <section className="run-panel demo-object" aria-label="Two-minute demo">
-          <h2>Watch a two-minute budget expire.</h2>
-          <button onClick={() => void run("mock")} disabled={running}>Run the demo →</button>
-          <span className="demo-mode-pill">{result?.moneyMode === "live" ? "Real money · live Arkiv" : "Simulated money · live Arkiv"}</span>
+          <h2>{showingRealRun ? "Real money. Permission expired." : "Watch a two-minute budget expire."}</h2>
+          {showingRealRun && <span className="demo-mode-pill real-run-pill">{realRun.label}</span>}
+          {!showingRealRun && result.moneyMode === "live" && <span className="demo-mode-pill real-run-pill">Real money · Base mainnet</span>}
           <DemoStepper key={displayedMandate?.id ?? "ready"} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
             confirmedExpired={mandateExpired} running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
+          <button className="simulation-button" onClick={() => void run("mock")} disabled={running}>Run a simulation →</button>
+          <span className="demo-mode-pill">Simulated money · live Arkiv</span>
+          {!showingRealRun && <button className="back-to-real" disabled={running} onClick={() => {
+            setShowingRealRun(true); setResult(archivedResult); setError(""); setQueryEvidence({});
+          }}>Back to the real run</button>}
+          {localLiveAvailable && !showingRealRun && result.moneyMode === "live" && mandateExpired && <details><summary>Publish this video take</summary><p>Run <code>npm run export:real-run</code> locally, then commit public/real-run.json and redeploy.</p></details>}
           {error && <div className="demo-error"><p role="alert">Demo interrupted. Review the details before retrying.</p><details><summary>Error details</summary><p>{error}</p></details></div>}
         </section>
       </section>
@@ -243,7 +253,8 @@ export function Dashboard() {
         } : undefined} />
 
         <ProofFooter liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified}
-          mandate={displayedMandate} before={queryEvidence.before} after={queryEvidence.after} health={health}>
+          deposit={(mockMoney ? realRun.snapshot.events : displayedEvents).find(event => event.action === "earn.sweep" && event.status === "completed")?.reference}
+          showingRealRun={showingRealRun} mandate={displayedMandate} before={queryEvidence.before} after={queryEvidence.after} health={health}>
             {health ? adapters.map(([key, label]) => <p key={key}>{label}: {health.adapters[key].mode.toUpperCase()} — {health.adapters[key].detail}</p>) : <p>{healthError ? "Service status unavailable" : "Reading service status…"}</p>}
             {result && <p>{result.phase}</p>}
         </ProofFooter>

@@ -1,8 +1,33 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
 import { proxyFixture } from "./swarm-proxy-fixture";
 import { runDemo } from "../src/demo/run";
+import realRun from "../public/real-run.json" with { type: "json" };
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
+
+test("opens on read-only real proofs, replaces them with a simulation, and returns", async ({ page }) => {
+  let posts = 0;
+  await page.route("**/api/demo", async route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { state: null, localLiveAvailable: false } });
+    posts++;
+    const demo = await runDemo();
+    return route.fulfill({ contentType: "application/x-ndjson", body: JSON.stringify({ snapshot: demo.snapshot, moneyMode: "mock", phase: "EXPIRED", expired: true }) + "\n" });
+  });
+  await page.goto("http://localhost:3107");
+  await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
+  await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
+  const current = page.locator(".story-content > .timeline");
+  await expect(current).not.toContainText("Simulated:");
+  const deposit = realRun.snapshot.events.find(event => event.action === "earn.sweep")!.reference;
+  await expect(current.locator(`a[href="https://basescan.org/tx/${deposit}"]`)).toBeVisible();
+  expect(posts).toBe(0);
+  await page.getByRole("button", { name: "Run a simulation →", exact: true }).click();
+  await expect(current).toContainText("Simulated:");
+  await page.getByRole("button", { name: "Back to the real run", exact: true }).click();
+  await expect(current).not.toContainText("Simulated:");
+  await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
+  expect(posts).toBe(1);
+});
 
 test("localhost shows exact LIVE plan but cannot run without typed confirmation", async ({ page }) => {
   await page.goto("http://localhost:3107");
@@ -64,7 +89,7 @@ test("native encryption request, dev deferred mode, fresh-context retrieval and 
   await page.frameLocator('#owner-swarm-proxy iframe').getByRole("button", { name: "Owner: connect Swarm ID", exact: true }).click();
   await expect(page.getByText("Connected: Test owner · owner drive ready", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run LIVE (Base mainnet)", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Run the demo →", exact: true }).click();
+  await page.getByRole("button", { name: "Run a simulation →", exact: true }).click();
   await expect(page.getByText("EXPIRED", { exact: true })).toBeVisible();
   await expect(page.getByText("Action refused", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Deferred upload mode", exact: true })).toBeChecked();

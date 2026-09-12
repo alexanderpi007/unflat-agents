@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "label": "Real run · Base mainnet · 12 Sep 2026",
+  "snapshot": {
+    "agent": {
+      "id": "a7100000-0000-4000-8000-000000000001",
+      "displayName": "Atlas",
+      "ensName": "atlas.agents.unflat.eth",
+      "walletAddress": "0xe35285DDaBDD0d0C2F70F4067f7E06341E8a44e7",
+      "walletId": "not-exported",
+      "createdAt": "2026-09-11T18:06:45.143Z"
+    },
+    "mandate": {
+      "id": "86363121-0ce9-4dba-af88-6e0a42bd9c60",
+      "agentId": "a7100000-0000-4000-8000-000000000001",
+      "ownerId": "not-exported",
+      "allowedActions": [
+        "usdc.transfer",
+        "x402.pay",
+        "aimorgan.strategize",
+        "earn.sweep"
+      ],
+      "maxPerActionUsdcCents": 100,
+      "maxTotalUsdcCents": 120,
+      "spentUsdcCents": 105,
+      "startsAt": "2026-09-12T14:54:40.859Z",
+      "expiresAt": "2026-09-12T14:56:40.859Z",
+      "createdAt": "2026-09-12T14:54:40.859Z",
+      "arkivEntityKey": "0xed233f5db11c94212fa77202068e3878215488a54b46052bec3390bfe7f72f58",
+      "arkivTransactionHash": "0xf05f205e515d2cc826868c2015e37876e368081fd30e8d78e1037696865b5fb5",
+      "arkivExplorerUrl": "https://tiramisu.explorer.arkiv.network/entity/0xed233f5db11c94212fa77202068e3878215488a54b46052bec3390bfe7f72f58",
+      "arkivExpiresAtBlock": "358325",
+      "arkivCommitment": "0x4360bd29e046ea60985b2036ab5683385e025f97ad422dbf5514d8c10e3c1dc0"
+    },
+    "events": [
+      {
+        "id": "c631cb19-0d45-4473-b8ae-7df03918a37e",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "ens.records",
+        "status": "completed",
+        "amountUsdcCents": 0,
+        "at": "2026-09-12T14:54:50.652Z",
+        "reference": "https://sepolia.etherscan.io/tx/0x43a7bcb66fc3937f952ab56ff0919fa8546cb360eebfe913ff6415b1a8e2c214",
+        "reason": "ENS name records updated for this mandate."
+      },
+      {
+        "id": "3a67c16f-2b04-4690-951e-27e506d27766",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "mandate.grant",
+        "status": "completed",
+        "amountUsdcCents": 0,
+        "at": "2026-09-12T14:54:50.659Z",
+        "reference": "https://tiramisu.explorer.arkiv.network/entity/0xed233f5db11c94212fa77202068e3878215488a54b46052bec3390bfe7f72f58",
+        "reason": "A real two-minute Arkiv mandate was granted. Expiry requires no revocation transaction."
+      },
+      {
+        "id": "d3524153-68a2-432b-a2c2-471bd585db55",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "usdc.transfer",
+        "status": "completed",
+        "amountUsdcCents": 5,
+        "at": "2026-09-12T14:54:55.858Z",
+        "reference": "0x7b07a7c073cee78bac1d49ea66043e3c8d2f2c6ab59b88759020f6804be2b6f2",
+        "reason": "Transferred 0.05 USDC on Base under the mandate."
+      },
+      {
+        "id": "20348ded-389f-40e1-8a37-b205ff50c14e",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "aimorgan.strategize",
+        "status": "completed",
+        "amountUsdcCents": 0,
+        "at": "2026-09-12T14:55:00.477Z",
+        "reason": "Dry strategize ran before the free call. AIMorgan fee waived for the demo (our own service; x402 relay offline)."
+      },
+      {
+        "id": "6a8d911d-52e4-49de-8fac-e4a36a99e220",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "earn.approve",
+        "status": "completed",
+        "amountUsdcCents": 0,
+        "at": "2026-09-12T14:55:02.880Z",
+        "reference": "0xe077e85d50758542ac2864aab3bcde7af7376910dadfe552e84a5ad88e6ca156",
+        "reason": "Approved exactly 1.00 USDC to the allowlisted vault."
+      },
+      {
+        "id": "d2026c35-703f-4876-a68a-210fd27f5a91",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "earn.sweep",
+        "status": "completed",
+        "amountUsdcCents": 100,
+        "at": "2026-09-12T14:55:05.000Z",
+        "reference": "0xf110d5257156592771910722466a29d7614e3bd07372fe635c0726ad90e91b3c",
+        "reason": "Deposited 1.00 USDC. Direct Morpho deposit (Privy Earn pending activation). Received 961300322302144879 raw vault shares; formatted shares unavailable."
+      },
+      {
+        "id": "4ebd1403-b071-4e0e-8f42-4e18a4131a46",
+        "agentId": "a7100000-0000-4000-8000-000000000001",
+        "action": "usdc.transfer",
+        "status": "refused",
+        "amountUsdcCents": 5,
+        "at": "2026-09-12T14:58:02.765Z",
+        "reason": "REFUSED — mandate expired or absent: Arkiv returned no matching unexpired entity at block 358364. TTL expiry removed authorization. No revocation was needed."
+      }
+    ]
+  }
+}
