@@ -4,6 +4,10 @@ The owner controls their Swarm ID identity, funded drive, and the secret referen
 
 The OWNER RECORD card initializes `@snaha/swarm-id@0.4.1` against `https://swarm-id.snaha.net`. Connect opens the trusted identity popup, which authenticates the owner and supplies the proxy iframe with the app session. Uploads require both an identity and `canUpload`, with `uploadMode === "user-stamp"`; we do not configure subsidised storage.
 
+### SDK dependency: bee-js
+
+Swarm ID uses **`@ethersphere/bee-js`** underneath. Its [0.4.1 package manifest](https://github.com/snaha/swarm-id/blob/main/lib/package.json) declares `^11.1.1`; this repository's lockfile resolves **11.2.0** (`npm ls @ethersphere/bee-js`). Our integration calls `SwarmIdClient.uploadData` / `downloadData` through the identity iframe, not a server-side Bee client. No additional dependency or Bee node was added.
+
 ### Localhost connection
 
 The trusted identity origin (`iframeOrigin`) remains `https://swarm-id.snaha.net`; the iframe loads `https://swarm-id.snaha.net/proxy`. `http://localhost:3000` is the dApp origin, not a trusted identity origin. Do not substitute localhost or the Vercel dApp URL for `iframeOrigin`. There is no `trustedOrigin` client option, localhost allowlist variable, or required HTTPS/dev flag for this hosted-identity setup. The local Bee cluster described in the [local-development guide](https://swarm.snaha.net/docs/local-development/) is not needed for your existing funded drive.
@@ -43,6 +47,14 @@ Failures now name the SDK call, report the status if available, and preserve the
 7. Close the original tab. Open a new private/incognito window or a separate browser profile and open the same localhost URL. Connect the same Swarm ID account; restore/unlock it through Swarm ID if required. Do not run the demo or publish again.
 8. Paste the saved reference into **RETRIEVE FROM SWARM**, then click **Retrieve**. The original JSON must appear without the old dashboard state or an agent lookup. Compare the agent ID, export timestamp, events and refusal with step 6.
 9. In DevTools Network, verify there is no request containing the secret to `/api/statements` or any unflat endpoint. Retrieval is handled by the Swarm ID iframe. Avoid sharing an unredacted HAR: Swarm requests and browser messages may contain secrets.
+
+## Nova round trip — owner-reported
+
+The owner reports that the statement from the archived **nova run of 13 September 2026** was published to the owner's Swarm drive via Swarm ID with native encryption, then retrieved from a fresh browser session using only the saved reference. This is the run for `nova.agents.unflat.eth`, agent `39086473-4800-45dc-9d1f-7c1a89f18273`, mandate `33653538-9023-4b08-97f4-ffb1dc443777` in `public/real-runs/nova-2026-09-13.json`.
+
+**Retrieval timestamp: not recorded.** The run date is not an upload or retrieval timestamp. The report is supplied by the owner; this repository does not contain an independently captured browser trace of that live retrieval. No byte count or retention estimate from the earlier mock-money proof below is attributed to nova.
+
+The public OWNER RECORD card displays this report only for that archived run, directly below the top refusal card. No secret reference, key, or owner email is shown in the proof. The full reference stays with the owner; neither publication nor retrieval sends it to our gateway. “Only the reference” means no prior unflat statement state was needed; Swarm ID initialization and any identity-service authentication remain part of the browser setup.
 
 ## Verified live proof — owner-reported, 2026-09-12
 

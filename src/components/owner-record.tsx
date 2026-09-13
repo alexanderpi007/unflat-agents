@@ -6,7 +6,7 @@ import { useSwarmId } from "@/browser/use-swarm-id";
 import { swarmCall, swarmErrorDetail } from "@/browser/swarm-errors";
 import { encryptedReference, plainStatement, statementBytes, type StatementInput } from "@/browser/owner-statement";
 
-export function OwnerRecord({ statement }: { statement?: StatementInput }) {
+export function OwnerRecord({ statement, novaRoundTrip = false }: { statement?: StatementInput; novaRoundTrip?: boolean }) {
   const swarm = useSwarmId();
   const busyRef = useRef(false);
   const [busy, setBusy] = useState("");
@@ -79,6 +79,11 @@ export function OwnerRecord({ statement }: { statement?: StatementInput }) {
   return (
     <article className="statement-card panel owner-record" id="owner-statement">
       <div className="section-head"><div><span>05 / THE OWNER’S STATEMENT</span><h3>The owner keeps the record.</h3></div><b>SWARM ID</b></div>
+      {novaRoundTrip && <div className="swarm-round-trip">
+        <p className="panel-label">NOVA · 13 SEP 2026 RUN · OWNER-REPORTED PROOF</p>
+        <p>Statement published to the owner's Swarm drive via Swarm ID (native encryption) and retrieved from a fresh browser session with only the reference — retrieval timestamp not recorded.</p>
+        <a className="proof-chip" href="https://github.com/alexanderpi007/unflat-agents/blob/main/swarm/README.md#nova-round-trip--owner-reported" title="Owner-reported nova round trip; secret reference omitted" target="_blank" rel="noreferrer">Swarm ↗</a>
+      </div>}
       <p>Publishing is optional. Save this statement to your funded Swarm ID drive.</p>
       {statement && <details className="statement-preview"><summary>{statement.agent.displayName}’s statement · {statement.events.length} decisions</summary>
         <p>{statement.events.some(event => event.status === "refused") ? "Includes the gateway’s refusal and its reason." : "Actions are being recorded as the demo runs."}</p>

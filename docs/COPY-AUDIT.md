@@ -1,5 +1,7 @@
 # Public copy audit · 13 September 2026
 
+Subsequent owner report: the nova statement was also published with native encryption and retrieved in a fresh browser session. That newly supplied report is shown separately in OWNER RECORD and documented in [Swarm evidence](../swarm/README.md#nova-round-trip--owner-reported); its exact retrieval timestamp has not been supplied. The initial audit below predates this report and remains a record of what was independently available then.
+
 Scope: rendered homepage at `https://unflat-agents.vercel.app` and the local Next build, both Nova/Atlas tabs, all expandable details, iframe connection text, simulation labels, and local owner-screen copy. The public page was inspected read-only, without starting a run. Authenticated owner controls were checked against source and fake-client/browser tests, not by logging in as the owner or moving funds.
 
 The six Base transactions, two ENS record updates and two Arkiv creations are genuine and correctly attributed. No run hashes or amounts needed replacement. The displayed Atlas archive is the **23:29 Europe/Rome run on September 12**, not the earlier 16:54 video take. Nova is the **02:39 Europe/Rome run on September 13**.

@@ -221,6 +221,10 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
       </section>
 
       <div className="story-content">
+        <OwnerRecord novaRoundTrip={showingRealRun && displayedMandate?.id === "33653538-9023-4b08-97f4-ffb1dc443777"} statement={statementAgent && displayedMandate ? {
+          agent: statementAgent, mandate: displayedMandate, events: displayedEvents,
+          source: mockMoney ? "mock-demo" : "gateway",
+        } : undefined} />
         {showingRealRun && <details className="story-section"><summary>Story: a retelling, not a chat transcript</summary><RealRunStory snapshot={realRun.snapshot} /></details>}
         <section className="identity-card panel story-section">
           <p className="panel-label">01 / THE AGENT</p>
@@ -275,11 +279,6 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         </article>
 
         <RefusalResult refusal={refusal} expired={mandateExpired} remaining={remaining} running={running} error={!!error} />
-
-        <OwnerRecord statement={statementAgent && displayedMandate ? {
-          agent: statementAgent, mandate: displayedMandate, events: displayedEvents,
-          source: mockMoney ? "mock-demo" : "gateway",
-        } : undefined} />
 
         <ProofFooter realRuns={realRuns} liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified} ensName={displayedAgent?.ensName}
           deposit={(mockMoney ? realRun.snapshot.events : displayedEvents).find(event => event.action === "earn.sweep" && event.status === "completed")?.reference}

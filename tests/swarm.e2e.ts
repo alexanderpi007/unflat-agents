@@ -7,6 +7,29 @@ import previousRealRun from "../public/real-runs/atlas-2026-09-12.json" with { t
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
 
+test("nova Swarm report follows the refusal card and never leaks into another run", async ({ page }) => {
+  await page.route("**/api/demo", async route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { state: null, localLiveAvailable: false } });
+    const demo = await runDemo();
+    return route.fulfill({ contentType: "application/x-ndjson", body: JSON.stringify({ snapshot: demo.snapshot, moneyMode: "mock", phase: "EXPIRED", expired: true }) + "\n" });
+  });
+  await page.goto("http://localhost:3107");
+  const proof = page.locator(".swarm-round-trip");
+  await expect(page.locator(".hero + .story-content > #owner-statement:first-child")).toBeVisible();
+  await expect(proof).toContainText("retrieved from a fresh browser session with only the reference");
+  await expect(proof).toContainText("OWNER-REPORTED PROOF");
+  await expect(proof).toContainText("retrieval timestamp not recorded");
+  expect(await proof.innerText()).not.toMatch(/[a-f0-9]{128}/i);
+  await expect(page.locator("#owner-reference")).toHaveValue("");
+  await expect(page.locator("#retrieve-reference")).toHaveValue("");
+  await page.getByRole("button", { name: "Previous real runs", exact: true }).click();
+  await expect(proof).toHaveCount(0);
+  await page.getByRole("button", { name: "Run a simulation →", exact: true }).click();
+  await expect(proof).toHaveCount(0);
+  await page.getByRole("button", { name: "Latest real run · nova", exact: true }).click();
+  await expect(proof).toBeVisible();
+});
+
 test("archived copy distinguishes allowance, current APY, configured services and earlier Swarm evidence", async ({ page }) => {
   await page.goto("http://localhost:3107");
   for (const name of ["nova", "Atlas"]) {
