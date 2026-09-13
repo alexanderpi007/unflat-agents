@@ -98,11 +98,10 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
   expect(created.accountToken).toMatch(/^unflat_account_[a-f0-9]{64}$/);
   expect(created.fundingAddress).not.toBe(atlas!.walletAddress);
   const duplicate = await enrollment.callTool({ name: "get_account", arguments: { name: "nova", owner_email: "owner@example.com" } });
-  expect(duplicate.isError).toBe(true);
+  expect(duplicate.isError).not.toBe(true); // Bound session reads its account, never enrolls again.
   expect(JSON.stringify(duplicate)).not.toContain(created.accountToken);
   expect((await enrollment.callTool({ name: "get_account", arguments: { name: "atlas" } })).isError).toBe(true);
-  await enrollment.close();
-  const client = await connect(created.accountToken);
+  const client = enrollment; // Connector keeps its original URL and sends no Authorization header.
   try {
     expect((await client.listTools()).tools.map(t => t.name).sort()).toEqual(["get_account", "pay", "request_mandate", "save", "statement", "strategize"]);
     const tool = (name: string, args = {}) => client.callTool({ name, arguments: args });
@@ -154,7 +153,9 @@ it("fake HTTP client: request → remote owner CONFIRM → pay → save → expi
 it("two scoped clients cannot read, spend, save or grant for each other; owner sees both balances", async () => {
   const enrollment = await connect();
   const first = body(await enrollment.callTool({ name: "get_account", arguments: { name: "comet", owner_email: "owner@example.com" } }));
-  const second = body(await enrollment.callTool({ name: "get_account", arguments: { name: "luna", owner_email: "owner@example.com" } }));
+  const anotherEnrollment = await connect();
+  const second = body(await anotherEnrollment.callTool({ name: "get_account", arguments: { name: "luna", owner_email: "owner@example.com" } }));
+  const anonymous = await connect();
   const one = await connect(first.accountToken), two = await connect(second.accountToken);
   try {
     expect(first.fundingAddress).not.toBe(second.fundingAddress);
@@ -178,7 +179,7 @@ it("two scoped clients cannot read, spend, save or grant for each other; owner s
     expect(ownStatement.events.some((event: { action: string }) => event.action === "usdc.transfer")).toBe(false);
     for (const name of ["pay", "save", "statement", "request_mandate", "strategize"]) {
       const args = name === "request_mandate" ? { purpose: "must refuse" } : name === "statement" ? {} : { ...(name === "strategize" ? {} : { amountUsdcCents: name === "pay" ? 5 : 100 }), idempotencyKey: `enrollment-${name}` };
-      expect((await enrollment.callTool({ name, arguments: args })).isError).toBe(true);
+      expect((await anonymous.callTool({ name, arguments: args })).isError).toBe(true);
     }
     const listed = await (await accounts(request("/api/owner/accounts", owner))).json();
     expect(listed.accounts.find((a: { id: string }) => a.id === second.accountId)).toMatchObject({ fundingAddress: second.fundingAddress, balance: { amountUsdcCents: expect.any(Number) } });
@@ -197,7 +198,7 @@ it("two scoped clients cannot read, spend, save or grant for each other; owner s
     vi.stubEnv("VERCEL", "1");
     expect((await GET(request("/api/mcp", first.accountToken))).status).toBe(403);
     expect((await accounts(request("/api/owner/accounts", owner))).status).toBe(403);
-  } finally { await Promise.all([enrollment.close(), one.close(), two.close()]); }
+  } finally { await Promise.all([enrollment.close(), anotherEnrollment.close(), anonymous.close(), one.close(), two.close()]); }
 });
 
 it("denial cannot be turned into approval by a replay", async () => {

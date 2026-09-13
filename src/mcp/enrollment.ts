@@ -40,6 +40,6 @@ export async function enroll(runtime: GatewayRuntime, input?: string, email?: st
     ensRegistrationTransaction: agent?.ensRegistrationTransaction,
     moneyMode: runtime.health.adapters.privy.mode,
     detail: status === "ready"
-      ? "Save accountToken privately now; it is returned once. Reconnect with it as your bearer token. The owner can fund this address with Base USDC and ETH for gas; spending still needs owner approval."
+      ? "Save account_token privately now; it is returned once. Pass it as a tool argument, Bearer header or ?token= on new sessions. If session_bound is true, this session needs no repeated token. Funding with Base USDC and ETH still requires the owner's separate approval before spending."
       : "Provisioning incomplete. Save this token; ask the owner to inspect the account. Do not fund or retry under another name. No automatic wallet/ENS retry." };
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Read-only protocol review against initialize.instructions and tools/list for v0.4.0.
+     Do not enroll, grant, or call financial tools to answer these questions. -->
+<evaluation>
+  <qa_pair><question>Inspect initialize and every tool schema. A fixed-URL connector cannot set Authorization. Which optional argument works across all account-scoped tools? Return its exact name.</question><answer>account_token</answer></qa_pair>
+  <qa_pair><question>Compare enrollment, polling, and reconnection instructions. Which one tool restores an existing account from a saved credential and enables subsequent credential-free calls within that session?</question><answer>get_account</answer></qa_pair>
+  <qa_pair><question>Use the workflow instructions and the payment/saving schemas to calculate the USDC cents left from the stated budget after one payment and one saving action. Return the integer.</question><answer>15</answer></qa_pair>
+  <qa_pair><question>Compare the refusal protocol with the payment description. After confirmed expiry, should an agent submit the same payment using a fresh key? Answer Yes or No.</question><answer>No</answer></qa_pair>
+  <qa_pair><question>Compare the owner approval tool with the discovery list. Can possessing a bound MCP session approve a pending budget without the owner? Answer Yes or No.</question><answer>No</answer></qa_pair>
+  <qa_pair><question>Inspect account and approval tool descriptions. Which result field carries the link that may be shown to the human without revealing an account credential?</question><answer>approval_url</answer></qa_pair>
+  <qa_pair><question>Compare all schemas and authentication instructions. How many exposed tools accept the optional account credential argument? Return the integer.</question><answer>6</answer></qa_pair>
+  <qa_pair><question>Compare the enrollment token lifecycle and existing-account read description. Does reconnecting with a saved credential return a replacement account token? Answer Yes or No.</question><answer>No</answer></qa_pair>
+  <qa_pair><question>Combine the authentication and payment instructions: does successful session binding itself remove the need for a valid spending mandate? Answer Yes or No.</question><answer>No</answer></qa_pair>
+  <qa_pair><question>After a confirmed expiry refusal, which tool provides the current account's readable decisions and proofs without requiring an active budget? Return the exact tool name.</question><answer>statement</answer></qa_pair>
+</evaluation>

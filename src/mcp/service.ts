@@ -7,7 +7,7 @@ export class AgentService {
   constructor(private readonly runtime: GatewayRuntime, private readonly accountId?: string, private readonly enrollmentIpHash?: string, private readonly gatewayOrigin = "http://localhost:3000") {}
   private approvalUrl(id: string) { return new URL(`/owner?request=${encodeURIComponent(id)}`, this.gatewayOrigin).toString(); }
   get agentId() {
-    if (!this.accountId) throw new Error("REFUSED — use your account_token. Open an account with get_account({name, owner_email}) first, then send Authorization: Bearer <account_token> on every later call.");
+    if (!this.accountId) throw new Error("REFUSED — use your account_token: pass it as a tool argument, Bearer header or ?token=. Successful get_account binds that account to the MCP session; do not enroll again to reconnect.");
     return this.accountId;
   }
   private async account() {
