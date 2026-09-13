@@ -1,6 +1,9 @@
 import type { Agent, DemoSnapshot, Mandate, StatementEvent } from "@/core/types";
 
-export type RealRun = { version: 1; label: string; snapshot: DemoSnapshot };
+export type RealRun = {
+  version: 1; label: string; snapshot: DemoSnapshot;
+  presentation?: { ownerLabel: string; client: "Claude Code" | "Claude.ai"; walletOwnership: "owner-owned" | "app-owned (legacy)" };
+};
 
 export function exportLatestRealRun(runs: DemoSnapshot[]): RealRun {
   for (const run of [...runs].sort((a, b) => b.mandate.createdAt.localeCompare(a.mandate.createdAt))) {

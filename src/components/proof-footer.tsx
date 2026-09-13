@@ -1,8 +1,11 @@
 import type { ArkivMandateQuery, Mandate, RuntimeHealth } from "@/core/types";
+import type { RealRun } from "@/demo/export-real-run";
+import { RealRunProofs } from "./real-run-proofs";
 
 const repo = "https://github.com/alexanderpi007/unflat-agents/blob/main";
 
-export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameVerified, ensName = "atlas.agents.unflat.eth", mandate, before, after, health, children }: {
+export function ProofFooter({ realRuns, liveMoney, started, showingRealRun, deposit, nameVerified, ensName = "atlas.agents.unflat.eth", mandate, before, after, health, children }: {
+  realRuns: RealRun[];
   deposit?: string;
   ensName?: string;
   showingRealRun: boolean;
@@ -12,6 +15,7 @@ export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameV
   return <section className="story-section proof-footer" id="proofs" aria-labelledby="proofs-heading">
     <p className="panel-label">06 / VERIFY IT YOURSELF</p><h2 id="proofs-heading">What is real?</h2>
     <p>Real evidence first. Try a simulation without moving funds.</p>
+    <RealRunProofs runs={realRuns} />
     <div className="proof-list">
       <article><h3>Money</h3><p>{showingRealRun ? "Real run shown above; simulations never broadcast." : started && liveMoney ? "This run uses real Base funds." : "Simulation shown above; simulations never broadcast."}</p>
         {deposit && <a className="proof-chip" title={deposit} href={`https://basescan.org/tx/${deposit}`} target="_blank" rel="noreferrer">Base ↗</a>}

@@ -17,9 +17,9 @@ npm install
 npm run dev
 ```
 
-The dashboard opens on the committed, read-only LIVE evidence in [`public/real-run.json`](public/real-run.json). **Run a simulation →** temporarily replaces it with simulated money and real Arkiv expiry; **Back to the real run** restores the archive. Loading the archive sends no transactions and never authorizes spending.
+The dashboard opens on **nova’s September 13 owner-owned wallet run via Claude.ai**. **Previous real runs** switches to **Atlas’s September 12 run via Claude Code**. Both are committed read-only statements: [nova](public/real-runs/nova-2026-09-13.json), [Atlas](public/real-runs/atlas-2026-09-12.json). Each has its own Base, Arkiv and ENS proofs and expiry refusal with $0.15 left. The six-line Story is a retelling of recorded decisions, not a chat transcript; client attribution and the public owner label are supplied by the demo owner, not inferred from transactions. **Run a simulation →**, at the bottom, temporarily replaces the view with simulated money and real Arkiv expiry; **Back to the real run** restores the selected archive. Loading or switching archives sends no transactions and never authorizes spending.
 
-For a new video take, use the bank-operator scripted LIVE API with `OWNER_TOKEN` and its required confirmation (operator controls are API-only). After the complete run (including expiry/refusal), run `npm run export:real-run`, review `public/real-run.json`, commit it, and redeploy. The exporter reads the local gateway store, rejects incomplete/mock runs, and whitelists public fields; wallet-service IDs, mandate openings/secrets, idempotency data and Swarm references are not exported. It never signs or broadcasts. Public deployments only read this file; they cannot refresh it from a private store. Set the funded `ARKIV_PRIVATE_KEY` in `.env` for simulations with real expiry.
+`npm run export:real-run` exports those two explicitly approved account/date selections from the local gateway store into `public/real-runs/*.json`, and keeps `public/real-run.json` as the latest-run compatibility URL. It rejects incomplete/mock runs and unexpected dates, and whitelists public fields: no emails, tokens, wallet-service IDs, mandate openings/secrets, idempotency data or Swarm references. It never signs or broadcasts. For a new approved video take, update the selections in `scripts/export-real-run.ts` and page imports, then export, review, commit and redeploy; new enrolled accounts are never automatically made public. Public deployments cannot refresh snapshots from the private store. Set the funded `ARKIV_PRIVATE_KEY` in `.env` for simulations with real expiry.
 
 The dashboard streams each step with runtime timestamps and a real 60-block (nominally two-minute) Arkiv lifetime:
 
@@ -46,7 +46,7 @@ On the local gateway or its temporary HTTPS tunnel, **Owner mode** uses Privy em
 | Component | Public / MOCK money dashboard | Local LIVE dashboard | `demo:mock` |
 |---|---|---|---|
 | Wallet | Persistent address displayed; no provisioning/signing | Existing Privy wallet ID from private store | Isolated simulated wallet |
-| 0.05 USDC transfer + 1 USDC deposit | Simulated, no BaseScan proof links | Real Base transactions, gated and confirmed | Simulated |
+| 0.05 USDC transfer + 1 USDC deposit | Two real archived runs with Base proof links; optional simulations never broadcast | Real Base transactions, gated and confirmed | Simulated |
 | Arkiv mandate | Real Tiramisu creation, uncached query, natural expiry | Same real TTL/query checks | Simulated, accelerated |
 | AIMorgan | Simulated strategy/validation | External dry then fee-waived strategy; validation required | Simulated |
 | APY card | Read-only Morpho API, or explicitly unavailable | Same source | No invented APY |

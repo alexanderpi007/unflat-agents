@@ -1,18 +1,18 @@
 import type { StatementEvent } from "@/core/types";
 
-export function ActionFeed({ events, mockMoney, history = false }: { events: StatementEvent[]; mockMoney: boolean; history?: boolean }) {
+export function ActionFeed({ events, mockMoney, history = false, agentName = "Atlas" }: { events: StatementEvent[]; mockMoney: boolean; history?: boolean; agentName?: string }) {
   const titles: Record<string, string> = {
-    "agent.create": "Atlas’s identity is ready",
-    "ens.records": "Atlas’s name records are updated",
-    "ens.readonly": "Atlas’s name is verified",
+    "agent.create": `${agentName}’s identity is ready`,
+    "ens.records": `${agentName}’s name records are updated`,
+    "ens.readonly": `${agentName}’s name is verified`,
     "mandate.grant": "Two-minute budget granted",
-    "usdc.transfer": "Atlas sends USDC",
-    "aimorgan.strategize": "Atlas requests a savings recommendation",
+    "usdc.transfer": `${agentName} sends USDC`,
+    "aimorgan.strategize": `${agentName} requests a savings recommendation`,
     "earn.approve": "Exact deposit amount approved",
-    "earn.sweep": "Atlas moves idle money into the approved savings vault",
+    "earn.sweep": `${agentName} moves idle money into the approved savings vault`,
   };
   return <article className="timeline panel">
-    <div className="section-head"><div><span>{history ? "HISTORY" : "03 / THE ACTIONS"}</span><h3>{history ? "Earlier recorded decisions" : "What Atlas does with permission"}</h3></div></div>
+    <div className="section-head"><div><span>{history ? "HISTORY" : "03 / THE ACTIONS"}</span><h3>{history ? "Earlier recorded decisions" : `What ${agentName} does with permission`}</h3></div></div>
     {!events.length && <p>Every action leaves a record.</p>}
     <div className="events">{events.filter(event => history || event.status !== "refused").map(event => {
       const eventMock = history ? /MOCK|simulated/i.test(event.reason) : mockMoney;

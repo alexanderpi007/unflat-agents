@@ -286,6 +286,24 @@ footer p { margin: 0; color: var(--muted); }
 .story-page .demo-object > .simulation-button { margin-top: 24px; }
 .story-page .demo-object > .back-to-real { display: block; background: transparent; color: var(--green); font-size: 15px; padding: 8px; text-decoration: underline; }
 .real-run-pill { color: var(--green); }
+.real-run-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
+.story-page .real-run-tabs button { flex: 1; padding: 12px 8px; background: transparent; color: var(--muted); font-size: 15px; border: 0; border-bottom: 2px solid transparent; }
+.story-page .real-run-tabs button[aria-pressed="true"] { color: var(--green); border-bottom-color: var(--green); }
+.story-page .real-run-tabs button:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.run-account-summary { margin-top: 16px; }
+.story-page .run-account-summary h3 { font-size: 28px; margin-bottom: 8px; }
+.story-page .run-account-summary p { font-size: 15px; line-height: 1.5; margin: 4px 0; }
+.run-wallet { overflow-wrap: anywhere; }
+.run-budget-left { font-weight: 600; color: var(--green); margin-top: 16px; }
+.run-story ol { list-style: none; margin: 24px 0 0; padding: 0; max-width: 720px; }
+.run-story li { display: flex; gap: 16px; padding: 12px 16px; margin: 8px 0; background: var(--panel); }
+.run-story li.owner-line { border-left: 2px solid var(--green); }
+.run-story li > span { min-width: 48px; color: var(--green); font-size: 15px; font-weight: 600; }
+.run-story li p { margin: 0; overflow-wrap: anywhere; }
+.real-run-proofs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; margin: 24px 0; }
+.real-run-proofs > article { border-bottom: 1px solid var(--line); padding-bottom: 24px; }
+.story-page .simulation-section .simulation-button { display: block; background: transparent; border: 1px solid var(--line); color: var(--green); font-size: 15px; padding: 12px 16px; margin: 16px 0 8px; }
+@media (max-width: 700px) { .real-run-proofs { grid-template-columns: 1fr; } .run-story li { gap: 8px; padding: 12px 8px; } }
 .progress-object { position: relative; }
 .demo-stepper { position: relative; margin-top: 24px; }
 .demo-stepper.has-clock { padding-bottom: 272px; }

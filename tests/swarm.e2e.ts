@@ -3,6 +3,7 @@ import { ownerFixture } from "./owner-ui-fixture";
 import { proxyFixture } from "./swarm-proxy-fixture";
 import { runDemo } from "../src/demo/run";
 import realRun from "../public/real-run.json" with { type: "json" };
+import previousRealRun from "../public/real-runs/atlas-2026-09-12.json" with { type: "json" };
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
 
@@ -32,6 +33,48 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   await expect(current).not.toContainText("Simulated:");
   await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
   expect(posts).toBe(1);
+});
+
+test("real-run tabs keep identities, stories and proofs isolated; simulation is secondary", async ({ page }) => {
+  let posts = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().includes("/api/demo")) posts++; });
+  await page.goto("http://localhost:3107");
+  const summary = page.locator(".run-account-summary");
+  const current = page.locator(".story-content > .timeline");
+  await expect(summary).toContainText("nova.agents.unflat.eth");
+  await expect(summary).toContainText("Owner: Giacomo (email hidden)");
+  await expect(summary).toContainText("owner-owned wallet");
+  await expect(summary).toContainText("Claude.ai");
+  await expect(page.locator(".run-story li")).toHaveCount(6);
+  await expect(page.locator(".run-story")).toContainText("not a chat transcript");
+  await expect(page.locator(".run-budget-left")).toHaveText("$0.15 left when permission expired.");
+  await expect(current).toContainText("nova sends USDC");
+  await expect(page.locator(".demo-object .simulation-button")).toHaveCount(0);
+  await expect(page.locator(".simulation-section .simulation-button")).toBeVisible();
+  await page.getByRole("button", { name: "Previous real runs", exact: true }).click();
+  await expect(summary).toContainText("atlas.agents.unflat.eth");
+  await expect(summary).toContainText("app-owned (legacy) wallet");
+  await expect(summary).toContainText("Claude Code");
+  await expect(current).toContainText("Atlas sends USDC");
+  await expect(current).not.toContainText("nova");
+  await expect(page.locator(".hero-refused")).toContainText("Atlas cannot spend again");
+  await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
+  for (const run of [realRun, previousRealRun]) {
+    for (const action of ["usdc.transfer", "earn.approve", "earn.sweep"]) {
+      const hash = run.snapshot.events.find(e => e.action === action && e.status === "completed")!.reference;
+      await expect(page.locator(`.real-run-proofs a[href="https://basescan.org/tx/${hash}"]`)).toBeVisible();
+    }
+  }
+  await page.getByRole("button", { name: "Latest real run · nova", exact: true }).click();
+  await expect(summary).toContainText("nova.agents.unflat.eth");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/real-runs-desktop.png", animations: "disabled" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".demo-stepper li")).toHaveCount(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/real-runs-mobile.png", animations: "disabled" });
+  expect(posts).toBe(0);
 });
 
 test("remote Owner mode opens email login without exposing operator controls", async ({ page }) => {
