@@ -48,7 +48,7 @@ export function OwnerAccounts({ token, onGranted }: { token: string; onGranted: 
     finally { setBusy(false); lock.current = false; }
   }
   return <section aria-label="Owner accounts">
-    <h2>All accounts</h2>
+    <h2>Your accounts</h2>
     <p>Fund only ready, live accounts with Base USDC and ETH for gas. Funding does not grant permission.</p>
     {data && <p>{data.moneyMode === "live" ? "Real Base balances" : "Mock balances · do not fund mock addresses"}</p>}
     {data?.accounts.length === 0 && <p>No accounts yet. Agents enroll with get_account and a new name.</p>}

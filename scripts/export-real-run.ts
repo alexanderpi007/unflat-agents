@@ -17,7 +17,7 @@ for (const selection of selections) {
   const mandate = await store.getMandate(agent.id);
   if (!mandate || !mandate.createdAt.startsWith(selection.date)) throw new Error(`Expected dated mandate for ${selection.file}; review the public selections before exporting a newer run.`);
   const run = exportRealRun(agent, mandate, await store.listEvents(agent.id));
-  run.presentation = { ownerLabel: "Giacomo (email hidden)", client: selection.client,
+  run.presentation = { ownerLabel: agent.ownership?.kind === "privy-user" ? "Giacomo (email hidden)" : "Bank operator (legacy)", client: selection.client,
     walletOwnership: agent.ownership?.kind === "privy-user" ? "owner-owned" : "app-owned (legacy)" };
   runs.push({ file: selection.file, run });
 }

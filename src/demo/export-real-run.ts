@@ -30,15 +30,15 @@ export function exportRealRun(agent: Agent, mandate: Mandate, allEvents: Stateme
   }
   const publicEvents = events.filter(e => ["ens.records", "ens.readonly", "mandate.grant", "usdc.transfer", "aimorgan.strategize", "earn.approve", "earn.sweep"].includes(e.action)).map(e => {
     const block = e.reason.match(/Arkiv returned no matching unexpired entity at block (\d+)/)?.[1];
-    const shares = e.reason.match(/Received (\d+) raw vault shares/)?.[1];
+    const shares = e.reason.match(/Received (\d+) raw vault shares/)?.[1] ?? e.reason.match(/vault shares \((\d+) raw\)/)?.[1];
     const reasons: Record<string, string> = {
       "ens.records": "ENS name records updated for this mandate.",
       "ens.readonly": "ENS identity resolved to the agent wallet.",
-      "mandate.grant": "A real two-minute Arkiv mandate was granted. Expiry requires no revocation transaction.",
+      "mandate.grant": "Arkiv entity created with a 60-block lifetime, approximately two minutes.",
       "usdc.transfer": "Transferred 0.05 USDC on Base under the mandate.",
-      "aimorgan.strategize": "Dry strategize ran before the free call. AIMorgan fee waived for the demo (our own service; x402 relay offline).",
+      "aimorgan.strategize": /free(?: AIMorgan)?(?: REST)? call/.test(e.reason) ? "Gateway recorded dry strategize followed by a free AIMorgan REST call. No x402 payment was made." : "Gateway recorded an AIMorgan strategy response; payment details are in the private statement.",
       "earn.approve": "Approved exactly 1.00 USDC to the allowlisted vault.",
-      "earn.sweep": `Deposited 1.00 USDC. Direct Morpho deposit (Privy Earn pending activation).${shares ? ` Received ${shares} raw vault shares; formatted shares unavailable.` : " See the receipt for shares received."}`,
+      "earn.sweep": `Direct Morpho deposit via Privy signing.${shares ? ` Received ${shares} raw vault shares (18 decimals).` : " Share quantity unavailable in this export; inspect the deposit receipt."}`,
     };
     const reference = e.reference && (/^0x[0-9a-f]{64}$/i.test(e.reference) || /^https:\/\/(sepolia\.etherscan\.io\/tx|tiramisu\.explorer\.arkiv\.network\/entity)\/0x[0-9a-f]{64}$/i.test(e.reference)) ? e.reference : undefined;
     return { id: e.id, agentId: agent.id, action: e.action, status: e.status, amountUsdcCents: e.amountUsdcCents,

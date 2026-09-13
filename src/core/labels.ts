@@ -1,4 +1,4 @@
 export const aimorganFeeWaivedLabel =
-  "AIMorgan fee waived for the demo (our own service; x402 relay offline)";
+  "Free AIMorgan REST call (x402 not used)";
 
-export const directMorphoLabel = "Direct Morpho deposit (Privy Earn pending activation)";
+export const directMorphoLabel = "Direct Morpho deposit via Privy signing";

@@ -7,6 +7,25 @@ import previousRealRun from "../public/real-runs/atlas-2026-09-12.json" with { t
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
 
+test("archived copy distinguishes allowance, current APY, configured services and earlier Swarm evidence", async ({ page }) => {
+  await page.goto("http://localhost:3107");
+  for (const name of ["nova", "Atlas"]) {
+    if (name === "Atlas") await page.getByRole("button", { name: "Previous real runs", exact: true }).click();
+    await page.locator("details").evaluateAll(items => items.forEach(item => (item as HTMLDetailsElement).open = true));
+    const text = await page.locator("body").innerText();
+    expect(text).not.toMatch(/No trust required|pending activation|relay offline|fee waived|Name verification pending|cannot spend again/);
+    expect(text).toContain("not the wallet balance");
+    expect(text).toContain("not the APY earned by either archived run");
+    expect(text).toContain("Owner-reported upload and retrieval on 12 September");
+    expect(text).toContain("5,582 bytes of a mock-money statement");
+    expect(text).toContain("Expiry does not revoke Privy's delegated signer");
+    await expect(page.locator(".story-content > .timeline")).not.toContainText("Simulated:");
+    const raw = name === "nova" ? "961254643264473773" : "961269432084896269";
+    await expect(page.locator(".story-content > .timeline")).toContainText(`${raw} raw vault shares (18 decimals)`);
+    await expect(page.locator(".run-account-summary")).toContainText("Participant-reported client:");
+  }
+});
+
 test("account sculpture follows scroll, respects reduced motion and never executes an action", async ({ page }) => {
   const mutations: string[] = [];
   const errors: string[] = [];
@@ -56,8 +75,8 @@ test("account sculpture follows scroll, respects reduced motion and never execut
 test("problem block leads the hero and its full display headline fits five mobile lines", async ({ page }) => {
   await page.goto("http://localhost:3107");
   const problem = page.getByRole("region", { name: "Your agent has a wallet. It doesn't have a bank.", exact: true });
-  await expect(problem).toContainText('A wallet is a key. A bank is limits, statements, and a way to say no. Every "AI wallet" ships the key and skips the rest.');
-  await expect(problem).toContainText("We built the bank.");
+  await expect(problem).toContainText("A wallet alone doesn't define an agent's budget, when permission ends, or how the owner keeps a record.");
+  await expect(problem).toContainText("We built that layer.");
   expect(await problem.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector(".hero")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -84,8 +103,8 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   await page.goto("http://localhost:3107");
   await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: `Meet ${realRun.snapshot.agent.displayName}`, exact: true })).toBeVisible();
-  await expect(page.locator(".hero-refused")).toContainText(`${realRun.snapshot.agent.displayName} cannot spend again`);
-  await expect(page.locator(`#proofs a[title="${realRun.snapshot.agent.ensName}"]`)).toHaveAttribute("href", `https://explorer.ens.dev/${realRun.snapshot.agent.ensName}`);
+  await expect(page.locator(".hero-refused")).toContainText(`${realRun.snapshot.agent.displayName} cannot spend under this mandate`);
+  await expect(page.locator(`.run-account-summary a[title="${realRun.snapshot.agent.ensName}"]`)).toHaveAttribute("href", `https://explorer.ens.dev/${realRun.snapshot.agent.ensName}`);
   await expect(page.getByRole("button", { name: "Owner mode", exact: true })).toBeVisible();
   await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
   const current = page.locator(".story-content > .timeline");
@@ -113,7 +132,8 @@ test("real-run tabs keep identities, stories and proofs isolated; simulation is 
   await expect(summary).toContainText("Claude.ai");
   await expect(page.locator(".run-story li")).toHaveCount(6);
   await expect(page.locator(".run-story")).toContainText("not a chat transcript");
-  await expect(page.locator(".run-budget-left")).toHaveText("$0.15 left when permission expired.");
+  await expect(page.locator(".run-budget-left")).toHaveAttribute("href", "#budget");
+  await expect(page.locator("#budget .balance-card > strong")).toHaveText("$0.15");
   await expect(current).toContainText("nova sends USDC");
   await expect(page.locator(".demo-object .simulation-button")).toHaveCount(0);
   await expect(page.locator(".simulation-section .simulation-button")).toBeVisible();
@@ -123,8 +143,9 @@ test("real-run tabs keep identities, stories and proofs isolated; simulation is 
   await expect(summary).toContainText("Claude Code");
   await expect(current).toContainText("Atlas sends USDC");
   await expect(current).not.toContainText("nova");
-  await expect(page.locator(".hero-refused")).toContainText("Atlas cannot spend again");
+  await expect(page.locator(".hero-refused")).toContainText("Atlas cannot spend under this mandate");
   await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
+  await page.getByText("Proof index for both archived runs", { exact: true }).click();
   for (const run of [realRun, previousRealRun]) {
     for (const action of ["usdc.transfer", "earn.approve", "earn.sweep"]) {
       const hash = run.snapshot.events.find(e => e.action === action && e.status === "completed")!.reference;
@@ -216,7 +237,7 @@ test("approval deep link shows one request and persists approved state after rel
   await approve.click();
   await expect(page.getByText("Approved — your agent can act for 2 minutes", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Approved — your agent can act for 2 minutes", { exact: true })).toBeVisible();
+  await expect(page.getByText("Approved — a budget was granted. Its original expiry still applies; approval status does not renew it.", { exact: true })).toBeVisible();
   await expect(approve).toHaveCount(0);
 });
 

@@ -50,7 +50,7 @@
         "amountUsdcCents": 0,
         "at": "2026-09-13T00:39:04.193Z",
         "reference": "https://tiramisu.explorer.arkiv.network/entity/0xe6002dd0fe19e6a3cf4a95a1dcb52ed96caa4a1520720078b7cfbc3c7ea63b80",
-        "reason": "A real two-minute Arkiv mandate was granted. Expiry requires no revocation transaction."
+        "reason": "Arkiv entity created with a 60-block lifetime, approximately two minutes."
       },
       {
         "id": "a72b8a82-8df0-4cbf-a38b-1109f7b22036",
@@ -69,7 +69,7 @@
         "status": "completed",
         "amountUsdcCents": 0,
         "at": "2026-09-13T00:39:57.218Z",
-        "reason": "Dry strategize ran before the free call. AIMorgan fee waived for the demo (our own service; x402 relay offline)."
+        "reason": "Gateway recorded dry strategize followed by a free AIMorgan REST call. No x402 payment was made."
       },
       {
         "id": "222c4f63-5b85-443d-b1e5-a2b1a063aefc",
@@ -89,7 +89,7 @@
         "amountUsdcCents": 100,
         "at": "2026-09-13T00:40:05.786Z",
         "reference": "0x2c8a940e6e9a19203909d5aee69bf121eb5d39363a8083d761315d6cb676ab0b",
-        "reason": "Deposited 1.00 USDC. Direct Morpho deposit (Privy Earn pending activation). See the receipt for shares received."
+        "reason": "Direct Morpho deposit via Privy signing. Received 961254643264473773 raw vault shares (18 decimals)."
       },
       {
         "id": "243112b0-d19c-4053-a430-e540d642f534",

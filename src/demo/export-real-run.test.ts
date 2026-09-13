@@ -38,4 +38,12 @@ describe("public real-run export", () => {
     expect(() => exportRealRun(snapshot.agent, snapshot.mandate, snapshot.events.slice(0, -1))).toThrow("complete LIVE");
     expect(() => exportRealRun(snapshot.agent, snapshot.mandate, snapshot.events.map(e => ({ ...e, reason: `MOCK MONEY ${e.reason}` })))).toThrow("complete LIVE");
   });
+  it("preserves receipt share quantities without claiming current integration status", () => {
+    const events = snapshot.events.map(e => e.action === "earn.sweep" ? { ...e,
+      reason: "Received 0.961254643264473773 vault shares (961254643264473773 raw)." } : e);
+    const exported = exportRealRun(snapshot.agent, snapshot.mandate, events);
+    expect(exported.snapshot.events.find(e => e.action === "earn.sweep")?.reason).toContain("961254643264473773 raw vault shares");
+    expect(JSON.stringify(exported)).not.toMatch(/pending activation|relay offline|our own service/);
+    expect(exported.snapshot.events.find(e => e.action === "aimorgan.strategize")?.reason).toContain("No x402 payment");
+  });
 });

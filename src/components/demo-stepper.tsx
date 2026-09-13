@@ -41,7 +41,7 @@ export function DemoStepper({ events, agentName = "Atlas", ...timer }: TimerInpu
     </ol>
     {!timer.running && !refused && !events.length && <p className="demo-empty">Press run. Two minutes. Watch it stop.</p>}
     {refused && <div className={`hero-refused ${dismissed ? "banner-dismissed" : ""}`} role="status">
-      <strong>REFUSED</strong><p>Time's up. {agentName} cannot spend again. Nobody revoked anything.</p>
+      <strong>REFUSED</strong><p>Time's up. {agentName} cannot spend under this mandate.</p>
       <button className="dismiss-refusal" aria-label="Dismiss refusal banner" onClick={() => setDismissed(true)}>×</button>
     </div>}
   </div>;

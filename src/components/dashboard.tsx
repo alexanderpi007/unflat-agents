@@ -13,7 +13,6 @@ import { ProblemBlock } from "./problem-block";
 import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
 import type { RealRun } from "@/demo/export-real-run";
-import { aimorganFeeWaivedLabel, directMorphoLabel } from "@/core/labels";
 import type {
   Agent,
   ArkivMandateQuery,
@@ -189,52 +188,50 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         </div>
       </header>
       {ownerModeAvailable && ownerMode && <OwnerLoginLoader appId={privyAppId} requestId={approvalRequest} />}
-      <ProblemBlock name={realRun.snapshot.agent.ensName} />
+      <ProblemBlock name={displayedAgent?.ensName ?? realRun.snapshot.agent.ensName} />
       <section className="hero" id="top">
         <div className="hero-copy"><p className="eyebrow"><span className="section-number">01</span> A BANK ACCOUNT FOR AI AGENTS</p>
-          <h1>A bank account.<br /><em>Built to expire.</em></h1>
-          <p className="lede">An agent gets a name, a timed budget, yield, and a statement its owner keeps.</p>
-          <div className="evidence-intro"><span className="evidence-dot" /><p>{showingRealRun ? "These runs already happened." : "You are watching a simulation."}<br /><strong>{showingRealRun ? "Check every receipt yourself." : "The real runs are one click away."}</strong></p></div>
-          <dl className="hero-facts"><div><dt>Real accounts</dt><dd>{realRuns.length.toString().padStart(2, "0")}</dd></div><div><dt>Permission</dt><dd>2 <small>minutes</small></dd></div><div><dt>Revocations</dt><dd>0</dd></div></dl>
+          <h1>An agent account.<br /><em>Permission expires.</em></h1>
+          <p className="lede">An agent gets a name, an expiring budget, access to a savings vault, and a statement its owner can save.</p>
+          <div className="evidence-intro"><span className="evidence-dot" /><p>{showingRealRun ? "Read-only records of completed runs." : mockMoney ? "You are watching a simulation." : "This run moves real Base funds."}<br /><strong>Proof links sit beside the recorded decisions.</strong></p></div>
         </div>
         <section className="run-panel demo-object" aria-label="Two-minute demo">
           <nav className="real-run-tabs" aria-label="Real runs">
             <button aria-pressed={showingRealRun && selectedRun === 0} disabled={running} onClick={() => showRealRun(0)}>Latest real run · nova</button>
             <button aria-pressed={showingRealRun && selectedRun === 1} disabled={running} onClick={() => showRealRun(1)}>Previous real runs</button>
           </nav>
-          <div className="receipt-heading"><span>ACCOUNT / {showingRealRun ? String(selectedRun + 1).padStart(2, "0") : "DEMO"}</span><span>{showingRealRun ? "RECORDED ON BASE" : "SIMULATED MONEY"}</span></div>
+          <div className="receipt-heading"><span>ACCOUNT / {showingRealRun ? String(selectedRun + 1).padStart(2, "0") : "DEMO"}</span><span>{showingRealRun ? "ARCHIVED RUN" : mockMoney ? "SIMULATED MONEY" : "REAL BASE MONEY"}</span></div>
           <h2>{showingRealRun ? "Real money. Permission expired." : "Watch a two-minute budget expire."}</h2>
           {showingRealRun && <span className="demo-mode-pill real-run-pill">{realRun.label}</span>}
           {showingRealRun && <div className="run-account-summary">
             <h3>{realRun.snapshot.agent.displayName} <a className="proof-chip" href={`https://explorer.ens.dev/${realRun.snapshot.agent.ensName}`} title={realRun.snapshot.agent.ensName} target="_blank" rel="noreferrer">ENS ↗</a></h3>
             <p>{realRun.snapshot.agent.ensName}</p>
             <p>Owner: {realRun.presentation?.ownerLabel} · {realRun.presentation?.walletOwnership} wallet</p>
-            <p>Third-party agent via {realRun.presentation?.client}</p>
+            <p>Participant-reported client: {realRun.presentation?.client}</p>
             <p className="run-wallet">Wallet: <a href={`https://basescan.org/address/${realRun.snapshot.agent.walletAddress}`} target="_blank" rel="noreferrer">{realRun.snapshot.agent.walletAddress}</a></p>
           </div>}
           {!showingRealRun && result.moneyMode === "live" && <span className="demo-mode-pill real-run-pill">Real money · Base mainnet</span>}
           <DemoStepper key={displayedMandate?.id ?? "ready"} agentName={displayedAgent?.displayName} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
             confirmedExpired={mandateExpired} running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
-          {showingRealRun && <p className="run-budget-left">{money(remaining)} left when permission expired.</p>}
+          {showingRealRun && <a className="run-budget-left" href="#budget">Budget and expiry evidence ↓</a>}
           {!showingRealRun && <button className="back-to-real" disabled={running} onClick={() => showRealRun(selectedRun)}>Back to the real run</button>}
-          {ownerModeAvailable && !showingRealRun && result.moneyMode === "live" && mandateExpired && <details><summary>Publish this video take</summary><p>Run <code>npm run export:real-run</code> locally, then commit public/real-run.json and redeploy.</p></details>}
+          {ownerModeAvailable && !showingRealRun && result.moneyMode === "live" && mandateExpired && <details><summary>Publish this video take</summary><p>Review the account/date selections in <code>scripts/export-real-run.ts</code>, run <code>npm run export:real-run</code>, verify the exports, then commit <code>public/real-runs/</code> and <code>public/real-run.json</code> and redeploy.</p></details>}
           {error && <div className="demo-error"><p role="alert">Demo interrupted. Review the details before retrying.</p><details><summary>Error details</summary><p>{error}</p></details></div>}
         </section>
       </section>
 
       <div className="story-content">
-        {showingRealRun && <RealRunStory snapshot={realRun.snapshot} />}
+        {showingRealRun && <details className="story-section"><summary>Story: a retelling, not a chat transcript</summary><RealRunStory snapshot={realRun.snapshot} /></details>}
         <section className="identity-card panel story-section">
           <p className="panel-label">01 / THE AGENT</p>
           <div className="avatar" aria-hidden="true">{displayedAgent?.displayName?.[0]?.toUpperCase() ?? "A"}<span>01</span></div>
-          <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2><p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p></div>
+          <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2>{!showingRealRun && <p className="ens">{displayedAgent?.ensName ?? "Identity not ready"}</p>}</div>
           <div className="identity-summary">
-            <p>{nameVerified ? "Name verified: it points to this agent’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
-            {displayedAgent?.ensName && <a className="proof-chip" title={displayedAgent.ensRegistrationTransaction ?? displayedAgent.ensName} href={displayedAgent.ensExplorerUrl ?? `https://explorer.ens.dev/${displayedAgent.ensName}`} target="_blank" rel="noreferrer">ENS ↗</a>}
+            <p>{showingRealRun ? "Archived ENS identity. This page does not refresh its resolution." : nameVerified ? "Name resolved from Sepolia to this wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name resolution unavailable."}</p>
+            {!showingRealRun && displayedAgent?.ensName && displayedAgent.ensMode === "live" && <a className="proof-chip" title={displayedAgent.ensName} href={displayedAgent.ensExplorerUrl ?? `https://explorer.ens.dev/${displayedAgent.ensName}`} target="_blank" rel="noreferrer">ENS ↗</a>}
             <details><summary>Identity details</summary>
-              <p>The same wallet is reused across runs: {short(displayedAgent?.walletAddress ?? walletAddress) || "Loading…"}.</p>
-              <p>Wallet: {displayedAgent?.walletAddress}</p><p>Resolved from ENS: {displayedAgent?.ensResolvedAddress ?? "Not resolved"}</p>
-              <p>ENSv2 · Sepolia</p>
+              {showingRealRun ? <p>Both archived names were independently resolved during the <a href="https://github.com/alexanderpi007/unflat-agents/blob/main/docs/COPY-AUDIT.md#run-proofs">13 September copy audit ↗</a>. ENSv2 names are on Sepolia; their address records point to Base wallet addresses. ENS name ownership stays with the gateway deployer, not the Privy wallet owner.</p>
+                : <><p>Displayed wallet: {displayedAgent?.walletAddress ?? walletAddress}. A simulation reuses Atlas's address without a signing wallet.</p><p>Resolved from ENS: {displayedAgent?.ensResolvedAddress ?? "Unavailable"}. ENSv2 · Sepolia.</p></>}
               {displayedAgent?.ensRegistrationTransaction && <a href={`https://sepolia.etherscan.io/tx/${displayedAgent.ensRegistrationTransaction}`} target="_blank" rel="noreferrer">Registration transaction ↗</a>}
             </details>
           </div>
@@ -242,8 +239,8 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
 
         <section className="story-section panel" id="budget" tabIndex={-1}>
           <p className="panel-label">02 / THE EXPIRING BUDGET</p>
-          <h2>{displayedAgent?.displayName ?? "Atlas"} can act for two minutes.</h2>
-          <p>Permission ends automatically. The owner does not need to revoke it.</p>
+          <h2>{mandateExpired ? "This budget has expired." : "A budget with an ending."}</h2>
+          <p>Authorization lasts 60 Arkiv blocks, approximately two minutes. The clock is an estimate.</p>
           <div className="budget-layout">
             <article className={`mandate-card ${mandateExpired ? "expired" : "active"}`}>
               <strong className="permission-state">{mandateExpired ? "EXPIRED" : running ? "IN PROGRESS" : "TWO MINUTES"}</strong>
@@ -251,6 +248,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
               <details><summary>Permission details</summary><p>Arkiv entity: {displayedMandate?.arkivEntityKey ?? "Not created yet"}</p>
                 <p>Allowed: send USDC, request advice, save in an approved vault. Maximum per action: {money(displayedMandate?.maxPerActionUsdcCents ?? 100)}.</p>
                 <p>Expiry block: {displayedMandate?.arkivExpiresAtBlock ?? "—"}. Authorization follows fresh Arkiv queries, not the display clock.</p>
+                {displayedMandate?.arkivTransactionHash && <a href={`https://tiramisu.explorer.arkiv.network/tx/${displayedMandate.arkivTransactionHash}`} target="_blank" rel="noreferrer">Creation receipt ↗</a>}
                 {result?.query && <p>Block {result.query.blockNumber.toString()} · found={String(result.query.found)}</p>}
               </details>
             </article>
@@ -258,7 +256,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
               <strong>{money(remaining)}</strong><span>Budget {mandateExpired ? "left when time ran out" : "remaining"}</span>
               <div className="meter"><i style={{ width: `${(remaining / mandateCap) * 100}%` }} /></div>
               <div className="balance-foot"><span>Used {money(displayedMandate?.spentUsdcCents ?? 0)}</span><span>Budget {money(mandateCap)}</span></div>
-              <details><summary>Budget details</summary><p>This is permission to use funds, not the wallet balance. Moving money into savings uses budget too.</p></details>
+              <details><summary>Budget details</summary><p>This is permission to use funds, not the wallet balance. Dollar notation here denotes USDC units, not a guaranteed exchange value. Moving money into savings uses budget too; Base gas is separate.</p></details>
             </article>
           </div>
         </section>
@@ -270,10 +268,10 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         </details>}
         <article className="rail-card panel story-section">
           <h3>Idle money can keep working.</h3>
-          <p className="rate-inline"><strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong> variable APY · {vaultRate?.source === "morpho-api" ? "Morpho API" : "rate not verified"}</p>
+          <p className="rate-inline"><strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong> current vault APY · {vaultRate?.source === "morpho-api" ? "Morpho API · six-hour average" : "rate not verified"}</p>
           <p className="risk-note">Variable yield, not a guaranteed return. Funds are exposed to smart contract risk.</p>
           <a className="proof-chip" title={vaultRate?.vault.address} href={`https://basescan.org/address/${vaultRate?.vault.address ?? "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9"}`} target="_blank" rel="noreferrer">Base ↗</a>
-          <details><summary>Savings details</summary><p>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}. {vaultRateError ? "Rate unavailable. No invented fallback." : "Realized six-hour average; not a guaranteed return."}</p><p>{directMorphoLabel}</p><p>{aimorganFeeWaivedLabel}</p><p>AIMorgan recommends. The gateway only deposits into approved vaults.</p></details>
+          <details><summary>Savings details</summary><p>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}. This is a current vault estimate, not the APY earned by either archived run. {vaultRateError ? "Rate unavailable; no fallback number." : vaultRate?.asOf ? `Fetched ${vaultRate.asOf}.` : "Waiting for the rate source."}</p><a href={`https://api.morpho.org/v1/vaults-v2/8453:${vaultRate?.vault.address ?? "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9"}/apy-averages?lookback=six_hours`} target="_blank" rel="noreferrer">Morpho rate source ↗</a></details>
         </article>
 
         <RefusalResult refusal={refusal} expired={mandateExpired} remaining={remaining} running={running} error={!!error} />
@@ -286,7 +284,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         <ProofFooter realRuns={realRuns} liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified} ensName={displayedAgent?.ensName}
           deposit={(mockMoney ? realRun.snapshot.events : displayedEvents).find(event => event.action === "earn.sweep" && event.status === "completed")?.reference}
           showingRealRun={showingRealRun} mandate={displayedMandate} before={queryEvidence.before} after={queryEvidence.after} health={health}>
-            {health ? adapters.map(([key, label]) => <p key={key}>{label}: {health.adapters[key].mode.toUpperCase()} — {health.adapters[key].detail}</p>) : <p>{healthError ? "Service status unavailable" : "Reading service status…"}</p>}
+            {health ? adapters.map(([key, label]) => <p key={key}>{label}: {health.adapters[key].mode.toUpperCase()}</p>) : <p>{healthError ? "Service status unavailable" : "Reading service status…"}</p>}
             {result && <p>{result.phase}</p>}
         </ProofFooter>
         <section className="story-section simulation-section" aria-label="Try a simulation">
@@ -295,7 +293,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
           <span className="demo-mode-pill">Simulated money · live Arkiv</span>
         </section>
       </div>
-      <footer><div><span className="footer-wordmark">unflat × agents</span><p>Permission ends.<br />The owner keeps the record.</p></div><div><span>Built at ETHRome 2026</span><p className="risk-note">Hackathon prototype, not a regulated bank or insured deposit. Never fund it with money you cannot afford to lose.</p><a href="https://github.com/alexanderpi007/unflat-agents" target="_blank" rel="noreferrer">Read the source ↗</a></div></footer>
+      <footer><div><span className="footer-wordmark">unflat × agents</span></div><div><span>Built at ETHRome 2026</span><p className="risk-note">Not an insured deposit. Never fund it with money you cannot afford to lose.</p><a href="https://github.com/alexanderpi007/unflat-agents" target="_blank" rel="noreferrer">Read the source ↗</a></div></footer>
     </main>
   );
 }

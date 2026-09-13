@@ -19,6 +19,6 @@ describe.each([nova, atlas] as RealRun[])("published $snapshot.agent.displayName
     const text = JSON.stringify(run);
     for (const key of ["ownerEmail", "account_token", "tokenHash", "signerId", "privyUserId", "privateKey", "opening", "statementReference"]) expect(text).not.toContain(`"${key}"`);
     expect(text).not.toMatch(/[\w.+-]+@[\w.-]+\.[a-z]+/i);
-    expect(run.presentation?.ownerLabel).toBe("Giacomo (email hidden)");
+    expect(run.presentation?.ownerLabel).toBe(run.presentation?.walletOwnership === "owner-owned" ? "Giacomo (email hidden)" : "Bank operator (legacy)");
   });
 });

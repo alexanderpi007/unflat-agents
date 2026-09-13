@@ -10,10 +10,10 @@ export function ProblemBlock({ name }: { name: string }) {
       <div className="problem-copy">
         <p className="eyebrow"><span className="section-number">00</span> THE PROBLEM</p>
         <h2 id="problem-heading">Your agent has a wallet. It doesn't have a bank.</h2>
-        <p className="problem-body">A wallet is a key. A bank is limits, statements, and a way to say no. Every "AI wallet" ships the key and skips the rest.</p>
-        <p className="problem-bridge">We built the bank.</p>
+        <p className="problem-body">A wallet alone doesn't define an agent's budget, when permission ends, or how the owner keeps a record.</p>
+        <p className="problem-bridge">We built that layer.</p>
         <a className="primary-link" href="#top">See the real runs <span aria-hidden="true">↗</span></a>
-        <p className="problem-footnote">Two real accounts. Public receipts. No trust required.</p>
+        <p className="problem-footnote">A gateway prototype, not a regulated bank.</p>
       </div>
       <AccountSculpture name={name} />
     </div>

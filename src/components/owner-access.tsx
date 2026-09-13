@@ -77,14 +77,14 @@ export function OwnerAccess({ children, onSession, requestId, credential, email,
         }}>Sign out owner</button>
       {!token ? <p>Verifying owner access…</p> : <><p>Owner authenticated · {queue?.moneyMode === "live" ? "agent actions use real Base money" : "agent actions use mock money"}</p>
         <h2>Owner approvals</h2>
-        {requestId && queue?.request?.status === "approved" && !notice && <p role="status">Approved — your agent can act for 2 minutes</p>}
+        {requestId && queue?.request?.status === "approved" && !notice && <p role="status">Approved — a budget was granted. Its original expiry still applies; approval status does not renew it.</p>}
         {requestId && queue && !queue.request && <p>Request not found. Check the link with your agent; nothing was approved.</p>}
         {requestId && queue?.request && queue.request.status !== "pending" && queue.request.status !== "approved" && <p>Request status: {queue.request.status}. No new permission granted.</p>}
         {!requestId && queue?.pending.length === 0 && <p>No pending requests. Ask the agent to call request_mandate.</p>}
         {queue?.pending.filter(request => !requestId || request.id === requestId).map(request => <article key={request.id}>
           <h3>{request.name ?? request.agentId}</h3><p>{request.purpose}</p>
           <p>2 minutes · $1.20 total cap · $1.00 per action · {queue.moneyMode === "live" ? "Base mainnet + gas" : "mock money"}</p>
-          <details><summary>Approval details</summary><p>Agent: {request.agentId}</p><p>Each pay sends 0.05 USDC to {queue.recipient}. Save deposits 1.00 USDC into {queue.vault}. Advice is fee-waived. The agent may repeat actions within the $1.20 cap.</p></details>
+          <details><summary>Approval details</summary><p>Agent: {request.agentId}</p><p>The standard demo pays 0.05 USDC to {queue.recipient} and saves 1.00 USDC into {queue.vault}. Agents can request other amounts within the cap. Money and advice follow the server mode shown above.</p></details>
           <label htmlFor={`approve-${request.id}`}>Type CONFIRM to approve this budget</label>
           <input id={`approve-${request.id}`} autoComplete="off" value={confirmations[request.id] ?? ""}
             onChange={event => setConfirmations(previous => ({ ...previous, [request.id]: event.target.value }))} />

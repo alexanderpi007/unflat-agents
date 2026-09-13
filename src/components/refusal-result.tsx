@@ -6,9 +6,9 @@ export function RefusalResult({ refusal, expired, remaining, running, error }: {
   return <section id="refusal-result" className={`refusal-stage ${refusal ? "refusal-complete" : "refusal-waiting"}`} aria-labelledby="refusal-heading">
     <p className="panel-label">04 / THE END OF PERMISSION</p>
     {refusal ? <div className="refusal-reveal">
-      <h2 id="refusal-heading">{expired ? "Permission ended. Money remained." : "The gateway stopped this action."}</h2>
+      <h2 id="refusal-heading">{expired ? "Permission expired, not the budget." : "The gateway stopped this action."}</h2>
       <p className="refusal-status" role="status">Action refused</p>
-      <p>{expired ? `$${(remaining / 100).toFixed(2)} remained. The next $0.05 transfer was refused because time ran out.` : "Read the gateway’s decision for the reason."}</p>
+      <p>{expired ? "The next transfer was refused because authorization expired, without a revocation transaction." : "Read the gateway’s decision for the reason."}</p>
       <details><summary>Why it was refused</summary><p>{refusal.reason}</p></details>
     </div> : <div>
       <h2 id="refusal-heading">What happens when time runs out?</h2>
