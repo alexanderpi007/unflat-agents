@@ -269,6 +269,11 @@ footer p { margin: 0; color: var(--muted); }
   .step-waiting .step-node, .step-refused .step-node { width: 58px; font-size: 10px; }
 }
 .story-page .meter i { transition: none; }
+.story-page .problem-block { padding: 64px max(32px, calc((100vw - 1200px) / 2)); border-bottom: 1px solid var(--line); color: var(--ink); background: var(--paper); }
+.story-page .problem-block h2 { max-width: 880px; margin: 0; font-size: 48px; font-weight: 700; line-height: 1.08; letter-spacing: -.055em; text-wrap: balance; }
+.story-page .problem-body { max-width: 640px; margin: 24px 0 0; font-size: 18px; line-height: 1.4; }
+.story-page .problem-bridge { margin: 24px 0 0; font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -.03em; }
+@media (max-width: 700px) { .story-page .problem-block { padding: 48px 16px; } }
 .story-page { font-size: 15px; }
 .story-page .topbar { height: 64px; padding: 0 32px; border-color: var(--line); }
 .story-page .hero { min-height: calc(100svh - 64px); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; padding: 48px max(32px, calc((100vw - 1200px) / 2)); border-bottom: 1px solid var(--line); }

@@ -7,6 +7,26 @@ import previousRealRun from "../public/real-runs/atlas-2026-09-12.json" with { t
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
 
+test("problem block leads the hero and its full display headline fits five mobile lines", async ({ page }) => {
+  await page.goto("http://localhost:3107");
+  const problem = page.getByRole("region", { name: "Your agent has a wallet. It doesn't have a bank.", exact: true });
+  await expect(problem).toContainText('A wallet is a key. A bank is limits, statements, and a way to say no. Every "AI wallet" ships the key and skips the rest.');
+  await expect(problem).toContainText("We built the bank.");
+  expect(await problem.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector(".hero")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await page.locator("#problem-heading").evaluate(element => {
+      const style = getComputedStyle(element);
+      return { lines: Math.round(element.getBoundingClientRect().height / parseFloat(style.lineHeight)), fontSize: style.fontSize,
+        overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    expect(layout.fontSize).toBe("48px");
+    expect(layout.lines).toBeLessThanOrEqual(5);
+    expect(layout.overflow).toBe(false);
+    await page.screenshot({ path: `test-results/problem-${width}.png`, animations: "disabled" });
+  }
+});
+
 test("opens on read-only real proofs, replaces them with a simulation, and returns", async ({ page }) => {
   let posts = 0;
   await page.route("**/api/demo", async route => {

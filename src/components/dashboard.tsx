@@ -9,6 +9,7 @@ import { OwnerControls, type DemoPlan } from "./demo-controls";
 import { OwnerLoginLoader } from "./owner-login-loader";
 import { DemoStepper } from "./demo-stepper";
 import { RealRunStory } from "./real-run-story";
+import { ProblemBlock } from "./problem-block";
 import { splitRunEvents, mergeEventHistory } from "@/browser/run-events";
 import type { DashboardUpdate, DemoMoney } from "@/demo/dashboard-run";
 import type { RealRun } from "@/demo/export-real-run";
@@ -187,6 +188,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
           <div className="hack-badge">ETHRome · 40H</div>
         </div>
       </header>
+      <ProblemBlock />
       {ownerModeAvailable && ownerMode && <OwnerLoginLoader appId={privyAppId} requestId={approvalRequest} />}
       <section className="hero" id="top">
         <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
