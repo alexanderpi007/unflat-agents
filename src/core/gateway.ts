@@ -6,6 +6,7 @@ import { createMandateCommitment } from "./mandate-commitment";
 import type { Dependencies } from "./ports";
 import { encryptStatement } from "./statement";
 import { aimorganFeeWaivedLabel, directMorphoLabel } from "./labels";
+import { accountChain, chainConfig, type AccountChain } from "./chains";
 import type {
   ActionKind,
   Agent,
@@ -28,21 +29,23 @@ export class SigningGateway {
     this.mandates = new MandateService(deps.store, deps.clock, deps.arkiv);
   }
 
-  async createAgent(displayName: string): Promise<Agent> {
-    return this.provisionAgent(randomUUID(), displayName);
+  async createAgent(displayName: string, chain: AccountChain = "base"): Promise<Agent> {
+    return this.provisionAgent(randomUUID(), displayName, undefined, undefined, chain);
   }
 
   async setupIdentityNamespace<T>(admin: { setup(): Promise<T> }): Promise<T> {
     return admin.setup();
   }
 
-  async getOrCreateAgent(agentId: string, displayName: string, ownerId?: string, ownerEmail?: string): Promise<{ agent: Agent; reused: boolean }> {
+  async getOrCreateAgent(agentId: string, displayName: string, ownerId?: string, ownerEmail?: string, chain: AccountChain = "base"): Promise<{ agent: Agent; reused: boolean }> {
     const existing = await this.deps.store.getAgent(agentId);
+    if (existing && accountChain(existing.chain) !== accountChain(chain)) throw new Error("REFUSED — account chain cannot be changed by enrollment.");
     if (existing) return { agent: await this.ensureAgentIdentity(agentId), reused: true };
-    return { agent: await this.provisionAgent(agentId, displayName, ownerId, ownerEmail), reused: false };
+    return { agent: await this.provisionAgent(agentId, displayName, ownerId, ownerEmail, chain), reused: false };
   }
 
-  private async provisionAgent(agentId: string, displayName: string, ownerId = "owner:demo", ownerEmail?: string): Promise<Agent> {
+  private async provisionAgent(agentId: string, displayName: string, ownerId = "owner:demo", ownerEmail?: string, requestedChain: AccountChain = "base"): Promise<Agent> {
+    const chain = accountChain(requestedChain);
     const label = displayName
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
@@ -51,10 +54,11 @@ export class SigningGateway {
     if (!label) throw new Error("Agent name must contain a letter or number.");
 
     const wallet: { walletId: string; address: Agent["walletAddress"]; ownership?: Agent["ownership"] } = ownerEmail
-      ? await this.deps.wallet.createOwnerWallet({ ownerEmail, accountId: agentId, vaults: this.deps.vaultAllowlist })
+      ? await this.deps.wallet.createOwnerWallet({ ownerEmail, accountId: agentId, vaults: this.deps.vaultAllowlist, chain })
       : await this.deps.wallet.createWallet();
     const agent: Agent = {
       id: agentId,
+      chain,
       ownerId,
       ...(wallet.ownership ? { ownership: wallet.ownership } : {}),
       displayName,
@@ -86,6 +90,7 @@ export class SigningGateway {
 
   async previewStrategize(input: { agentId: string; totalUsdcCents: number }) {
     const agent = await this.requireAgent(input.agentId);
+    if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, "aimorgan.strategize", 0);
     const dryStrategy = await this.deps.aiMorgan.strategize({
       agentAddress: agent.walletAddress,
       totalUsdcCents: input.totalUsdcCents,
@@ -109,6 +114,7 @@ export class SigningGateway {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
       if (agent.ownership?.kind !== "privy-user") throw new Error("REFUSED — recovery delegation is only configured for owner-owned accounts. Atlas remains legacy.");
+      if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, input.action, input.amountUsdcCents ?? 0);
       const amount = input.action === "owner.transfer" ? input.amountUsdcCents : 0;
       if (amount === undefined || !Number.isSafeInteger(amount) || amount < 0 || (input.action === "owner.transfer" && amount === 0)) throw new Error("REFUSED — invalid recovery amount.");
       const initial = await this.mandates.decide(input.agentId, input.action, amount);
@@ -139,11 +145,12 @@ export class SigningGateway {
 
   async usdcBalance(agentId: string) {
     const agent = await this.requireAgent(agentId);
-    return this.deps.preflight.getUsdcBalance(agent.walletAddress);
+    return this.deps.preflight.getUsdcBalance(agent.walletAddress, accountChain(agent.chain));
   }
 
   async previewVaultDeposit(input: { agentId: string; amountUsdcCents: number }) {
     const agent = await this.requireAgent(input.agentId);
+    if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, "earn.sweep", input.amountUsdcCents);
     const vault = this.selectedVault();
     if (vault.execution === "privy-earn-api") await this.deps.wallet.verifyPrivyEarnVault(vault);
     const preflight = await this.deps.preflight.verifyEarn({
@@ -236,6 +243,7 @@ export class SigningGateway {
   async payX402(input: { agentId: string; resource: string; idempotencyKey: string }) {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
+      if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, "x402.pay", 0);
       const quote = await this.deps.x402.quote(input.resource);
       const initial = await this.mandates.decide(input.agentId, "x402.pay", quote.amountUsdcCents);
       if (!initial.allowed) return this.refuse(input.agentId, "x402.pay", quote.amountUsdcCents, initial);
@@ -292,6 +300,7 @@ export class SigningGateway {
       });
       await this.requirePriceValidation(input.agentId, "usdc.transfer", validation.priceValidation);
       const preflight = await this.deps.preflight.verifyUsdcTransfer({
+        chain: accountChain(agent.chain),
         walletAddress: agent.walletAddress,
         recipient: input.recipient,
         amountUsdcCents: input.amountUsdcCents,
@@ -300,7 +309,7 @@ export class SigningGateway {
         return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, {
           ...initial,
           allowed: false,
-          reason: `REFUSED — independent Base transfer preflight failed: ${preflight.reason}`,
+          reason: `REFUSED — independent ${chainConfig(agent.chain).label} transfer preflight failed: ${preflight.reason}`,
         });
       }
 
@@ -313,23 +322,25 @@ export class SigningGateway {
         return this.refuse(input.agentId, "usdc.transfer", input.amountUsdcCents, signingDecision);
       }
       const transfer = await this.deps.wallet.transferUsdc({
+        chain: accountChain(agent.chain),
         walletId: agent.walletId,
         recipient: input.recipient,
         amountUsdcCents: input.amountUsdcCents,
         idempotencyKey: input.idempotencyKey,
       });
       const transferProof = transfer.source === "privy-live"
-        ? `Transaction ${transfer.transactionHash}: ${transfer.explorerUrl ?? `https://basescan.org/tx/${transfer.transactionHash}`}`
+        ? `Transaction ${transfer.transactionHash}: ${transfer.explorerUrl ?? `${chainConfig(agent.chain).explorerUrl}/tx/${transfer.transactionHash}`}`
         : `MOCK SAFETY NET — no transaction was broadcast; simulated reference ${transfer.transactionHash}.`;
       await this.event(
         input.agentId,
         "usdc.transfer",
         "completed",
         input.amountUsdcCents,
-        `${signingDecision.reason} AIMorgan priceValidation.allPassed was true and independent Base gas/balance checks passed. ${transferProof}`,
+        `${signingDecision.reason} AIMorgan priceValidation.allPassed was true and independent ${chainConfig(agent.chain).label} gas/balance checks passed. ${transferProof}`,
         transfer.transactionHash,
+        accountChain(agent.chain),
       );
-      return { transfer, preflight, decision: signingDecision };
+      return { chain: accountChain(agent.chain), transfer, preflight, decision: signingDecision };
     });
   }
 
@@ -341,6 +352,7 @@ export class SigningGateway {
   }): Promise<Strategy> {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
+      if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, "aimorgan.strategize", 0);
       const initial = await this.mandates.decide(input.agentId, "aimorgan.strategize", 0);
       if (!initial.allowed) return this.refuse(input.agentId, "aimorgan.strategize", 0, initial);
 
@@ -436,6 +448,7 @@ export class SigningGateway {
   }) {
     return this.idempotent(input.agentId, input.idempotencyKey, input, async () => {
       const agent = await this.requireAgent(input.agentId);
+      if (agent.chain === "avalanche-fuji") return this.unsupportedChain(agent, "earn.sweep", input.amountUsdcCents);
       const strategy = await this.deps.store.getStrategy(input.agentId, input.strategyId);
       if (!strategy) throw new Error("Validated strategy not found in the gateway store.");
       const initial = await this.mandates.decide(input.agentId, "earn.sweep", input.amountUsdcCents);
@@ -714,9 +727,16 @@ export class SigningGateway {
     throw new RefusalError(decision);
   }
 
+  private async unsupportedChain(agent: Agent, action: ActionKind, amount: number): Promise<never> {
+    const decision = await this.mandates.decide(agent.id, action, amount);
+    return this.refuse(agent.id, action, amount, { ...decision, allowed: false,
+      reason: `REFUSED — ${action} not supported on this chain (${chainConfig(agent.chain).label}); only pay is supported. No advice payment, approval or signing was attempted.` });
+  }
+
   private async requireAgent(agentId: string): Promise<Agent> {
     const agent = await this.deps.store.getAgent(agentId);
     if (!agent) throw new Error("Agent not found.");
+    accountChain(agent.chain);
     const resolved = await this.deps.ens.resolveIdentity(agent.ensName).catch(() => null);
     if (!resolved?.address || resolved.address.toLowerCase() !== agent.walletAddress.toLowerCase()) {
       return this.refuse(agentId, "ens.resolve", 0, {
@@ -739,6 +759,7 @@ export class SigningGateway {
     amountUsdcCents: number,
     reason: string,
     reference?: string,
+    chain?: AccountChain,
   ): Promise<void> {
     await this.deps.store.appendEvent({
       id: randomUUID(),
@@ -749,6 +770,7 @@ export class SigningGateway {
       reason,
       at: this.deps.clock.now().toISOString(),
       reference,
+      ...(chain ? { chain } : {}),
     });
   }
 

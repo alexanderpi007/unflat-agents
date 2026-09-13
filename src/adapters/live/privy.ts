@@ -18,6 +18,8 @@ import { confirmedShares } from "./confirmed-shares";
 import { pregenerateOwnerWallet } from "./owner-wallet";
 import type { WalletPort } from "@/core/ports";
 import type { HexAddress, HexHash, X402Quote } from "@/core/types";
+import { chainConfig, accountChain, usdcAtomic } from "@/core/chains";
+import { paymentClient } from "./usdc-transfer";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const baseUsdc: HexAddress = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -26,6 +28,7 @@ export class PrivyWalletAdapter implements WalletPort {
   private readonly client: PrivyClient;
   private readonly authorizationContext;
   private readonly baseClient;
+  private readonly fujiClient;
 
   constructor(
     appId: string,
@@ -34,9 +37,11 @@ export class PrivyWalletAdapter implements WalletPort {
     private readonly policyId: string,
     baseRpcUrl: string,
     private readonly sessionSignerId?: string,
+    fujiRpcUrl: string = chainConfig("avalanche-fuji").rpcUrl,
   ) {
     this.client = new PrivyClient({ appId, appSecret });
     this.baseClient = createPublicClient({ chain: base, transport: http(baseRpcUrl, { retryCount: 3, retryDelay: 1000 }) });
+    this.fujiClient = paymentClient("avalanche-fuji", fujiRpcUrl);
     this.authorizationContext = {
       authorization_private_keys: [authorizationPrivateKey],
     };
@@ -107,35 +112,32 @@ export class PrivyWalletAdapter implements WalletPort {
     return { quote, signature: encodePaymentSignatureHeader(payload) };
   }
 
-  async transferUsdc(input: {
-    walletId: string;
-    recipient: HexAddress;
-    amountUsdcCents: number;
-    idempotencyKey: string;
-  }) {
-    const rawAmount = BigInt(input.amountUsdcCents) * 10_000n;
+  async transferUsdc(input: Parameters<WalletPort["transferUsdc"]>[0]) {
+    const config = chainConfig(input.chain);
+    const client = accountChain(input.chain) === "base" ? this.baseClient : this.fujiClient;
+    const rawAmount = usdcAtomic(input.amountUsdcCents);
     const data = encodeFunctionData({
       abi: erc20Abi,
       functionName: "transfer",
       args: [input.recipient, rawAmount],
     });
     const sent = await this.client.wallets().ethereum().sendTransaction(input.walletId, {
-      caip2: "eip155:8453",
-      params: { transaction: { to: baseUsdc, data, value: "0x0", chain_id: 8453 } },
+      caip2: config.network,
+      params: { transaction: { to: config.usdc, data, value: "0x0", chain_id: config.id } },
       idempotency_key: input.idempotencyKey,
       authorization_context: this.authorizationContext,
     });
-    if (sent.caip2 !== "eip155:8453" || !/^0x[0-9a-fA-F]{64}$/.test(sent.hash)) {
-      throw new Error("Privy returned an invalid Base transaction response for the USDC transfer.");
+    if (sent.caip2 !== config.network || !/^0x[0-9a-fA-F]{64}$/.test(sent.hash)) {
+      throw new Error(`Privy returned an invalid ${config.label} response for the USDC transfer.`);
     }
     const transactionHash = sent.hash as HexHash;
-    const receipt = await this.baseClient.waitForTransactionReceipt({
+    const receipt = await client.waitForTransactionReceipt({
       hash: transactionHash,
       timeout: 55_000,
     });
-    if (receipt.status !== "success") throw new Error(`Base USDC transfer ${transactionHash} reverted.`);
+    if (receipt.status !== "success") throw new Error(`${config.label} USDC transfer ${transactionHash} reverted.`);
     const transferMatched = receipt.logs.some((log) => {
-      if (log.address.toLowerCase() !== baseUsdc.toLowerCase()) return false;
+      if (log.address.toLowerCase() !== config.usdc.toLowerCase()) return false;
       try {
         const decoded = decodeEventLog({ abi: erc20Abi, data: log.data, topics: log.topics });
         return decoded.eventName === "Transfer"
@@ -146,12 +148,12 @@ export class PrivyWalletAdapter implements WalletPort {
         return false;
       }
     });
-    if (!transferMatched) throw new Error(`Base transaction ${transactionHash} did not emit the confirmed USDC transfer.`);
+    if (!transferMatched) throw new Error(`${config.label} transaction ${transactionHash} did not emit the confirmed USDC transfer.`);
     return {
       transactionHash,
-      network: "eip155:8453" as const,
+      network: config.network,
       source: "privy-live" as const,
-      explorerUrl: `https://basescan.org/tx/${transactionHash}`,
+      explorerUrl: `${config.explorerUrl}/tx/${transactionHash}`,
     };
   }
 

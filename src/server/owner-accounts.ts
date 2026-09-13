@@ -2,6 +2,7 @@ import type { GatewayRuntime } from "./runtime";
 import { persistentAgentId } from "@/demo/dashboard-run";
 import { decideRequest } from "@/mcp/service";
 import { ownsAccount, type OwnerPrincipal } from "./owner-auth";
+import { accountChain } from "@/core/chains";
 
 export async function listOwnerAccounts(runtime: GatewayRuntime, principal: OwnerPrincipal = { role: "operator" }) {
   const { store } = runtime.deps;
@@ -20,6 +21,7 @@ export async function listOwnerAccounts(runtime: GatewayRuntime, principal: Owne
     const balance = agent ? await runtime.gateway.usdcBalance(id).catch(() => null) : null;
     const mandate = await runtime.gateway.checkMandate(id);
     rows.push({ id, name: agent?.ensName ?? `${account!.name}.agents.unflat.eth`,
+      chain: accountChain(agent?.chain ?? account?.chain),
       ownerId: account?.ownerId ?? agent?.ownerId ?? "owner:legacy",
       ownerEmail: agent?.ownership?.ownerEmail ?? account?.ownerEmail ?? null,
       ownership: agent?.ownership?.kind ?? "app-owned-legacy",

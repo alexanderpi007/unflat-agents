@@ -18,6 +18,12 @@ Every tool result has structuredContent and matching JSON text, including next_s
 
 Every tool, including get_account, accepts an optional `account_token` argument: pass the account_token you received from get_account. Bearer headers and /api/mcp?token=<account_token> also remain supported. If multiple credentials are supplied, all must agree; invalid credentials never fall back to a valid argument or session. Anonymous non-enrollment calls without a bound session say “use your account_token”. Token arguments are consumed by MCP authentication, never passed to gateway actions/adapters/statements or echoed in schema errors. They are still credentials: your MCP client/provider can see tool arguments, so do not publish transcripts or enable request-body logging. Approval URLs contain only a request UUID, never credentials. Next dev excludes MCP access logs; run ngrok with --inspect=false and disable upstream body/header logs.
 
+## Optional Avalanche Fuji accounts
+
+On the `avalanche` branch, add `chain: "avalanche-fuji"` to a **new** `get_account({name, owner_email})` enrollment. The default is `base`; existing accounts and tokens cannot switch chains. Responses identify the chain and funding asset. A Privy Ethereum wallet has the same EVM address on both networks, but each gateway account selects one network; balances and transactions are never combined across chains. Atlas and nova remain Base accounts.
+
+Fuji supports `pay` only: 5 test USDC cents, AVAX gas, a fresh Arkiv check before Privy signing, and a Snowtrace proof. `save` and `strategize` return `REFUSED` with “not supported on this chain”; no advice payment, approval or deposit is made. After one payment, wait for expiry and attempt one more payment: expect `REFUSED` with 115 cents of unused test-USDC budget. No automatic retry. Owner CONFIRM and all account authentication rules still apply. The manual policy, funding instructions and limitations are in [AVALANCHE.md](AVALANCHE.md).
+
 ## Fixed-URL connectors and session binding
 
 Initialize returns a cryptographically random `Mcp-Session-Id`. The MCP client carries that protocol header automatically; no manually configured Authorization header or URL change is required. After a successful get_account (new enrollment or authenticated existing-account read), `session_bound=true`: subsequent tools use that account without repeating the token. Binding establishes identity only—owner approval and fresh gateway mandate checks still apply to every financial action.

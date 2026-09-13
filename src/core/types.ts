@@ -1,3 +1,5 @@
+import type { AccountChain } from "./chains";
+
 export type ActionKind = "usdc.transfer" | "x402.pay" | "aimorgan.strategize" | "earn.sweep" | "earn.recall" | "owner.transfer";
 
 export type HexAddress = `0x${string}`;
@@ -5,6 +7,7 @@ export type HexHash = `0x${string}`;
 
 export interface AgentAccount {
   id: string;
+  chain?: AccountChain;
   name: string;
   ownerId: string;
   ownerEmail?: string;
@@ -26,6 +29,7 @@ export interface MandateRequest {
 
 export interface Agent {
   id: string;
+  chain?: AccountChain;
   ownerId?: string;
   ownership?: OwnerWalletIdentity;
   displayName: string;
@@ -185,7 +189,7 @@ export interface DirectEarnDepositResult {
 
 export interface UsdcTransferResult {
   transactionHash: HexHash;
-  network: "eip155:8453";
+  network: "eip155:8453" | "eip155:43113";
   source: "privy-live" | "mock";
   explorerUrl?: string;
 }
@@ -230,6 +234,7 @@ export interface RuntimeHealth {
 
 export interface StatementEvent {
   id: string;
+  chain?: AccountChain;
   agentId: string;
   action: string;
   status: "accepted" | "refused" | "completed" | "failed";

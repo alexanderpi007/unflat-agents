@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { chainConfig } from "@/core/chains";
 import type {
   AiMorganPort,
   ArkivPort,
@@ -60,11 +61,11 @@ export class MockWallet implements WalletPort {
     return { quote, signature: `mock_sig_${quote.nonce}` };
   }
 
-  async transferUsdc(input: { recipient: HexAddress; amountUsdcCents: number }): Promise<UsdcTransferResult> {
+  async transferUsdc(input: Parameters<WalletPort["transferUsdc"]>[0]): Promise<UsdcTransferResult> {
     this.calls.push(`transferUsdc:${input.recipient}:${input.amountUsdcCents}`);
     return {
       transactionHash: `0x${"3".repeat(64)}` as HexHash,
-      network: "eip155:8453" as const,
+      network: chainConfig(input.chain).network,
       source: "mock" as const,
     };
   }

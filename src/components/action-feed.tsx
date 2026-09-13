@@ -1,4 +1,5 @@
 import type { StatementEvent } from "@/core/types";
+import { chainConfig } from "@/core/chains";
 
 export function ActionFeed({ events, mockMoney, history = false, agentName = "Atlas" }: { events: StatementEvent[]; mockMoney: boolean; history?: boolean; agentName?: string }) {
   const titles: Record<string, string> = {
@@ -20,11 +21,11 @@ export function ActionFeed({ events, mockMoney, history = false, agentName = "At
       const reference = event.reference ?? "";
       const proof = /^https:\/\/(tiramisu\.explorer\.arkiv\.network|sepolia\.etherscan\.io)\//.test(reference)
         ? reference : !eventMock && ["usdc.transfer", "earn.approve", "earn.sweep"].includes(event.action) && /^0x[0-9a-fA-F]{64}$/.test(reference)
-          ? `https://basescan.org/tx/${reference}` : undefined;
+          ? `${chainConfig(event.chain).explorerUrl}/tx/${reference}` : undefined;
       return <div className="event" key={event.id}>
         <time dateTime={event.at}>{history ? new Date(event.at).toLocaleString("en-GB", { timeZone: "Europe/Rome" }) : new Date(event.at).toLocaleTimeString("en-GB", { timeZone: "Europe/Rome" })}</time><i className={event.status} />
         <div><strong>{event.status === "refused" ? "Refused: " : event.status === "failed" ? "Failed: " : simulated ? "Simulated: " : ""}{titles[event.action] ?? "Gateway decision recorded"}</strong>
-          {proof && <a className="proof-chip" title={reference.split("/").at(-1)} href={proof} target="_blank" rel="noreferrer">{event.action === "mandate.grant" ? "Arkiv" : event.action.startsWith("ens.") ? "ENS" : "Base"} ↗</a>}
+          {proof && <a className="proof-chip" title={reference.split("/").at(-1)} href={proof} target="_blank" rel="noreferrer">{event.action === "mandate.grant" ? "Arkiv" : event.action.startsWith("ens.") ? "ENS" : chainConfig(event.chain).proofLabel} ↗</a>}
           <details><summary>Decision details</summary><p>{event.action} · {event.status}</p><p>{event.reason}</p></details>
         </div>
         <span>{event.amountUsdcCents ? `$${(event.amountUsdcCents / 100).toFixed(2)}` : "—"}</span>

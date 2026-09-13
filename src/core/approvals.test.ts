@@ -13,13 +13,13 @@ it("persists one account claim and owner identity across store instances without
     const [ownerId, sameOwner] = await Promise.all([a.ensureOwnerId(), b.ensureOwnerId()]);
     expect(sameOwner).toBe(ownerId);
     const token = `unflat_account_${"a".repeat(64)}`;
-    const account = { id: "nova-id", name: "nova", ownerId, tokenHash: tokenFingerprint(token), status: "provisioning" as const, createdAt: new Date().toISOString() };
+    const account = { id: "nova-id", name: "nova", chain: "avalanche-fuji" as const, ownerId, tokenHash: tokenFingerprint(token), status: "provisioning" as const, createdAt: new Date().toISOString() };
     const claims = await Promise.all([a.reserveAccount(account), b.reserveAccount({ ...account, id: "duplicate-id" })]);
     expect(claims.filter(Boolean)).toHaveLength(1);
     const [stored] = await b.listAccounts();
     await a.finishAccount(stored.id, "ready");
     const reopened = new FileGatewayStore(file);
-    expect(await reopened.findAccountByTokenHash(tokenFingerprint(token))).toMatchObject({ id: stored.id, status: "ready", ownerId });
+    expect(await reopened.findAccountByTokenHash(tokenFingerprint(token))).toMatchObject({ id: stored.id, status: "ready", ownerId, chain: "avalanche-fuji" });
     expect(await reopened.findAccountByTokenHash("unknown")).toBeUndefined();
     expect(await reopened.ensureOwnerId()).toBe(ownerId);
     expect(await readFile(file, "utf8")).not.toContain(token);

@@ -20,6 +20,9 @@ export function ProofFooter({ realRuns, liveMoney, started, showingRealRun, depo
       <article><h3>Money</h3><p>{showingRealRun ? "Real run shown above; simulations never broadcast Base transactions." : started && liveMoney ? "This run uses real Base funds." : "Simulation shown above; simulations never broadcast Base transactions."}</p>
         <a href="#top">Selected run ↑</a>
       </article>
+      <article><h3>Fuji pay</h3><p>Avalanche Fuji testnet payments are implemented on this branch. No live Fuji payment proof is claimed here; savings are not supported on Fuji.</p>
+        <a href="https://github.com/alexanderpi007/unflat-agents/blob/avalanche/docs/AVALANCHE.md" target="_blank" rel="noreferrer">Fuji setup and tests ↗</a>
+      </article>
       <article><h3>Permission</h3><p>Budget and expiry are enforced by gateway software, not by Privy's signer policy.</p>
         <a href={`${repo}/src/core/mandates.ts`} target="_blank" rel="noreferrer">Mandate checks ↗</a>
         <details><summary>Query evidence</summary>{showingRealRun ? <p>The <a href={`${repo}/docs/COPY-AUDIT.md#run-proofs`}>dated run audit ↗</a> verifies both archived entities before and after expiry, including their creation-only event histories.</p>

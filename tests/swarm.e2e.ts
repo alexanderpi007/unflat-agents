@@ -299,6 +299,41 @@ test("owner lists separate funding addresses and confirms only the selected acco
   await expect(nova).toBeDisabled(); await expect(luna).toBeDisabled();
 });
 
+test("Fuji owner card labels testnet, uses Snowtrace, keeps CONFIRM and hides Base recovery", async ({ page }) => {
+  const id = "a7100000-0000-4000-8000-000000000044", address = `0x${"4".repeat(40)}`;
+  const actions: unknown[] = [];
+  const pending = [{ id, agentId: "fuji", name: "fuji.agents.unflat.eth", chain: "avalanche-fuji", purpose: "Pay on Fuji" }];
+  await page.route("**/api/owner/approvals", async route => {
+    expect(route.request().headers().authorization).toBe("Bearer test.privy.jwt");
+    if (route.request().method() === "POST") {
+      actions.push(route.request().postDataJSON()); pending.length = 0;
+      return route.fulfill({ json: { status: "approved" } });
+    }
+    return route.fulfill({ json: { pending, moneyMode: "live", recipient: address } });
+  });
+  await page.route("**/api/owner/accounts", route => route.fulfill({ json: { moneyMode: "live", accounts: [{
+    id, name: "fuji.agents.unflat.eth", chain: "avalanche-fuji", ownerEmail: "owner@example.com", ownership: "privy-user",
+    fundingAddress: address, balance: { amountUsdcCents: 100 }, status: "ready", mandate: { allowed: false, reason: "No mandate" }, ensExplorerUrl: "https://explorer.ens.dev/fuji.agents.unflat.eth",
+  }] } }));
+  await ownerFixture(page);
+  const section = page.getByRole("region", { name: "Owner accounts" });
+  await expect(section.locator(".demo-mode-pill")).toHaveText("Avalanche Fuji testnet");
+  await expect(section.getByRole("link", { name: "Fuji ↗", exact: true })).toHaveAttribute("href", `https://testnet.snowtrace.io/address/${address}`);
+  await expect(section).toContainText("Fuji tokens have no monetary value");
+  await section.getByText("Grant details", { exact: true }).click();
+  await expect(section).toContainText("save is not supported on this chain");
+  await expect(section).toContainText("AVAX gas");
+  await expect(section.getByText("Owner recovery through the gateway", { exact: true })).toHaveCount(0);
+  await expect(section.getByRole("button", { name: "Grant budget to fuji.agents.unflat.eth" })).toBeDisabled();
+  const approve = page.getByRole("button", { name: "Approve (2 minutes, $1.20 cap)", exact: true });
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("Type CONFIRM to approve this budget").fill("confirm");
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("Type CONFIRM to approve this budget").fill("CONFIRM");
+  await approve.click();
+  expect(actions).toEqual([{ id, action: "approve", confirmation: "CONFIRM" }]);
+});
+
 test("owner-owned recovery is per account, clearly labelled and separately CONFIRM gated", async ({ page }) => {
   const id = "a7100000-0000-4000-8000-000000000033";
   const vault = `0x${"2".repeat(40)}`;

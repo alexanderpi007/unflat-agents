@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { DemoPlan } from "./demo-controls";
 import { OwnerAccounts } from "./owner-accounts";
+import { chainConfig, type AccountChain } from "@/core/chains";
 
-type Queue = DemoPlan & { moneyMode: string; request?: { id: string; status: string } | null; pending: { id: string; name?: string; purpose: string; agentId: string }[] };
+type Queue = DemoPlan & { moneyMode: string; request?: { id: string; status: string } | null; pending: { id: string; name?: string; chain?: AccountChain; purpose: string; agentId: string }[] };
 
 export function OwnerAccess({ children, onSession, requestId, credential, email, onLogout }: {
   children?: ReactNode; requestId?: string; credential: string; email: string; onLogout: () => void; onSession: (token: string, plan?: DemoPlan) => void;
@@ -75,7 +76,7 @@ export function OwnerAccess({ children, onSession, requestId, credential, email,
           generation.current++;
           setToken(""); setQueue(undefined); setConfirmations({}); setNotice(""); sessionCallback.current(""); onLogout();
         }}>Sign out owner</button>
-      {!token ? <p>Verifying owner access…</p> : <><p>Owner authenticated · {queue?.moneyMode === "live" ? "agent actions use real Base money" : "agent actions use mock money"}</p>
+      {!token ? <p>Verifying owner access…</p> : <><p>Owner authenticated · {queue?.moneyMode === "live" ? "on-chain actions; check each account's chain below" : "agent actions use mock money"}</p>
         <h2>Owner approvals</h2>
         {requestId && queue?.request?.status === "approved" && !notice && <p role="status">Approved — a budget was granted. Its original expiry still applies; approval status does not renew it.</p>}
         {requestId && queue && !queue.request && <p>Request not found. Check the link with your agent; nothing was approved.</p>}
@@ -83,8 +84,8 @@ export function OwnerAccess({ children, onSession, requestId, credential, email,
         {!requestId && queue?.pending.length === 0 && <p>No pending requests. Ask the agent to call request_mandate.</p>}
         {queue?.pending.filter(request => !requestId || request.id === requestId).map(request => <article key={request.id}>
           <h3>{request.name ?? request.agentId}</h3><p>{request.purpose}</p>
-          <p>2 minutes · $1.20 total cap · $1.00 per action · {queue.moneyMode === "live" ? "Base mainnet + gas" : "mock money"}</p>
-          <details><summary>Approval details</summary><p>Agent: {request.agentId}</p><p>The standard demo pays 0.05 USDC to {queue.recipient} and saves 1.00 USDC into {queue.vault}. Agents can request other amounts within the cap. Money and advice follow the server mode shown above.</p></details>
+          <p>2 minutes · $1.20 total cap · $1.00 per action · {queue.moneyMode === "live" ? `${chainConfig(request.chain).label} + ${chainConfig(request.chain).gasSymbol} gas` : "mock money"}</p>
+          <details><summary>Approval details</summary><p>Agent: {request.agentId}</p><p>The standard demo pays 0.05 USDC to {queue.recipient}; {request.chain === "avalanche-fuji" ? "Fuji test tokens only; savings and advice are not supported on this chain." : `saves 1.00 USDC into ${queue.vault}.`} The gateway enforces the cap. Money follows the server mode and account chain shown above.</p></details>
           <label htmlFor={`approve-${request.id}`}>Type CONFIRM to approve this budget</label>
           <input id={`approve-${request.id}`} autoComplete="off" value={confirmations[request.id] ?? ""}
             onChange={event => setConfirmations(previous => ({ ...previous, [request.id]: event.target.value }))} />

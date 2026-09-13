@@ -125,8 +125,9 @@ function resolvePrivy(forceMock: boolean, earnViaPrivy: boolean) {
         value("PRIVY_POLICY_ID")!,
         value("BASE_RPC_URL")!,
         value("PRIVY_SESSION_SIGNER_ID"),
+        value("FUJI_RPC_URL"),
       ),
-      preflight: new BaseEarnPreflightAdapter(value("BASE_RPC_URL")!),
+      preflight: new BaseEarnPreflightAdapter(value("BASE_RPC_URL")!, value("FUJI_RPC_URL")),
       vaults,
       status: liveStatus(
         `Privy credentials, Base RPC, and ${earnViaPrivy ? "Privy Earn" : "direct Morpho"} vault allowlist configured.`,

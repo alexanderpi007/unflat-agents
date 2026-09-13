@@ -1,4 +1,5 @@
 import type { Agent, DemoSnapshot, Mandate, StatementEvent } from "@/core/types";
+import { accountChain } from "@/core/chains";
 
 export type RealRun = {
   version: 1; label: string; snapshot: DemoSnapshot;
@@ -18,6 +19,7 @@ export function exportLatestRealRun(runs: DemoSnapshot[]): RealRun {
 
 // Whitelist output fields; never serialize the store, mandate openings or SDK credentials.
 export function exportRealRun(agent: Agent, mandate: Mandate, allEvents: StatementEvent[]): RealRun {
+  if (accountChain(agent.chain) !== "base") throw new Error("This public archive exporter accepts Base runs only; Fuji payments must not be labelled Base mainnet.");
   const events = allEvents.filter(e => e.agentId === agent.id && e.at >= mandate.createdAt);
   const completed = (action: string) => events.find(e => e.action === action && e.status === "completed");
   const hashes = ["usdc.transfer", "earn.approve", "earn.sweep"].map(action => completed(action)?.reference);

@@ -1,3 +1,4 @@
+import type { AccountChain } from "./chains";
 import type {
   Agent,
   AgentAccount,
@@ -61,11 +62,12 @@ export interface GatewayStore {
 
 export interface WalletPort {
   createWallet(): Promise<{ walletId: string; address: HexAddress }>;
-  createOwnerWallet(input: { ownerEmail: string; accountId: string; vaults: VaultConfig[] }): Promise<{ walletId: string; address: HexAddress; ownership: OwnerWalletIdentity }>;
+  createOwnerWallet(input: { ownerEmail: string; accountId: string; vaults: VaultConfig[]; chain?: AccountChain }): Promise<{ walletId: string; address: HexAddress; ownership: OwnerWalletIdentity }>;
   redeemDirectVault(input: { walletId: string; walletAddress: HexAddress; vaultAddress: HexAddress; sharesRaw: string; idempotencyKey: string }): Promise<{ transactionHash: DirectVaultTransaction["transactionHash"]; explorerUrl?: string; assetsReceivedRaw: string; sharesRedeemedRaw: string }>;
   verifyPrivyEarnVault(vault: VaultConfig): Promise<void>;
   signX402(walletId: string, quote: X402Quote): Promise<SignedPayment>;
   transferUsdc(input: {
+    chain?: AccountChain;
     walletId: string;
     recipient: HexAddress;
     amountUsdcCents: number;
@@ -127,8 +129,9 @@ export interface AiMorganPort {
 
 export interface PreflightPort {
   verifyRecall(input: { walletAddress: HexAddress; vaultAddress: HexAddress; sharesRaw: string }): Promise<{ allPassed: boolean; reason: string; assetsRaw?: string }>;
-  getUsdcBalance(walletAddress: HexAddress): Promise<UsdcBalance>;
+  getUsdcBalance(walletAddress: HexAddress, chain?: AccountChain): Promise<UsdcBalance>;
   verifyUsdcTransfer(input: {
+    chain?: AccountChain;
     walletAddress: HexAddress;
     recipient: HexAddress;
     amountUsdcCents: number;

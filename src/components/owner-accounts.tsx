@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OwnerRecovery } from "./owner-recovery";
+import { chainConfig, type AccountChain } from "@/core/chains";
 
-type Row = { id: string; name: string; fundingAddress: string | null; status: string; ownerEmail?: string | null; ownership?: string; ownerPortalUrl?: string;
+type Row = { id: string; name: string; chain?: AccountChain; fundingAddress: string | null; status: string; ownerEmail?: string | null; ownership?: string; ownerPortalUrl?: string;
   balance: { amountUsdcCents: number } | null; mandate: { allowed: boolean; reason: string }; ensExplorerUrl: string };
 type Accounts = { accounts: Row[]; moneyMode: string; recipient?: string; vault?: string };
 
@@ -49,24 +50,25 @@ export function OwnerAccounts({ token, onGranted }: { token: string; onGranted: 
   }
   return <section aria-label="Owner accounts">
     <h2>Your accounts</h2>
-    <p>Fund only ready, live accounts with Base USDC and ETH for gas. Funding does not grant permission.</p>
-    {data && <p>{data.moneyMode === "live" ? "Real Base balances" : "Mock balances · do not fund mock addresses"}</p>}
+    <p>Fund only ready, live accounts on their labelled chain: Base USDC + ETH, or Fuji test USDC + AVAX. Funding does not grant permission.</p>
+    {data && <p>{data.moneyMode === "live" ? "On-chain balances · Fuji tokens have no monetary value" : "Mock balances · do not fund mock addresses"}</p>}
     {data?.accounts.length === 0 && <p>No accounts yet. Agents enroll with get_account and a new name.</p>}
     {data?.accounts.map(account => <article key={account.id}>
       <h3>{account.name}</h3>
+      <span className="demo-mode-pill">{chainConfig(account.chain).label}</span>
       <p>{account.ownership === "privy-user" ? `Owner-owned · ${account.ownerEmail}` : "App-owned · legacy (unchanged)"}</p>
       {account.ownership === "privy-user" && <a href={account.ownerPortalUrl ?? "/owner-wallet"} target="_blank" rel="noreferrer">Log in on Privy to withdraw or revoke ↗</a>}
       <p>{account.balance ? `$${(account.balance.amountUsdcCents / 100).toFixed(2)} USDC` : "Balance unavailable"} · {account.status}</p>
       {account.status !== "ready" && <p>Do not fund: provisioning is incomplete. Ask the gateway operator to inspect it.</p>}
       {account.fundingAddress && <><p>Funding address: <code>{account.fundingAddress}</code></p>
-        <a href={`https://basescan.org/address/${account.fundingAddress}`} target="_blank" rel="noreferrer">Base ↗</a> · <a href={account.ensExplorerUrl} target="_blank" rel="noreferrer">ENS ↗</a></>}
+        <a href={`${chainConfig(account.chain).explorerUrl}/address/${account.fundingAddress}`} target="_blank" rel="noreferrer">{chainConfig(account.chain).proofLabel} ↗</a> · <a href={account.ensExplorerUrl} target="_blank" rel="noreferrer">ENS ↗</a></>}
       <p>{account.mandate.allowed ? "Budget active" : "No active spending permission"}</p>
-      <details><summary>Grant details</summary><p>{account.mandate.reason}</p><p>Two minutes, $1.20 total cap, $1.00 per action. Pay 0.05 USDC to {data.recipient}; save 1.00 USDC into {data.vault}. Repeated actions allowed within the cap; plus Base gas when live.</p><p>For owner-owned accounts this also enables owner-only recall and transfer. Each recovery still needs its own CONFIRM. Recall returns funds to this wallet without consuming the cap.</p></details>
+      <details><summary>Grant details</summary><p>{account.mandate.reason}</p><p>Two minutes, $1.20 total cap, $1.00 per action. Pay 0.05 USDC to {data.recipient}; {account.chain === "avalanche-fuji" ? "test USDC only; save is not supported on this chain." : `save 1.00 USDC into ${data.vault}.`} Repeated actions allowed within the cap; plus {chainConfig(account.chain).gasSymbol} gas when live.</p><p>{account.chain === "avalanche-fuji" ? "Only pay is enabled. The Privy owner page can export or revoke; its withdrawal control remains Base-only." : "For owner-owned accounts this also enables owner-only recall and transfer. Each recovery still needs its own CONFIRM. Recall returns funds to this wallet without consuming the cap."}</p></details>
       <label htmlFor={`grant-${account.id}`}>Type CONFIRM for {account.name}</label>
       <input id={`grant-${account.id}`} autoComplete="off" value={confirmations[account.id] ?? ""}
         onChange={event => setConfirmations(previous => ({ ...previous, [account.id]: event.target.value }))} />
       <button disabled={busy || account.status !== "ready" || confirmations[account.id] !== "CONFIRM"} onClick={() => void grant(account.id)}>Grant budget to {account.name}</button>
-      {account.ownership === "privy-user" && account.status === "ready" && <OwnerRecovery accountId={account.id} token={token} vault={data.vault} moneyMode={data.moneyMode} />}
+      {account.ownership === "privy-user" && account.status === "ready" && account.chain !== "avalanche-fuji" && <OwnerRecovery accountId={account.id} token={token} vault={data.vault} moneyMode={data.moneyMode} />}
     </article>)}
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
   </section>;

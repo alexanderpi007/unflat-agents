@@ -1,6 +1,20 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { erc20Abi } from "viem";
 import { PrivyClient } from "@privy-io/node";
 import { pregenerateOwnerWallet } from "./owner-wallet";
+import { assertFujiPolicy } from "./fuji-policy";
+
+afterEach(() => vi.unstubAllEnvs());
+const manualFujiPolicy = {
+  id: "policy-owner", owner_id: "user-quorum", chain_type: "ethereum", version: "1.0", name: "Manual Fuji pay",
+  rules: [{ name: "Fuji USDC transfer", action: "ALLOW", method: "eth_sendTransaction", conditions: [
+    { field_source: "ethereum_transaction", field: "chain_id", operator: "eq", value: "43113" },
+    { field_source: "ethereum_transaction", field: "value", operator: "eq", value: "0" },
+    { field_source: "ethereum_transaction", field: "to", operator: "eq", value: "0x5425890298aed601595a70AB815c96711a31Bc65" },
+    { field_source: "ethereum_calldata", field: "function_name", operator: "eq", value: "transfer", abi: erc20Abi },
+    { field_source: "ethereum_calldata", field: "transfer.amount", operator: "lte", value: "1000000", abi: erc20Abi },
+  ] }],
+};
 
 const vaults = [{ id: "test-vault", label: "Test vault", execution: "direct-morpho" as const, address: `0x${"2".repeat(40)}` as const }];
 function fixture(existing = false, appCoOwner = false) {
@@ -18,6 +32,7 @@ function fixture(existing = false, appCoOwner = false) {
       if (url.pathname === "/v1/users/email/address") return Response.json(existing ? user : { error: "not found" }, { status: existing ? 200 : 404 });
       if (url.pathname === "/v1/users") return Response.json(user);
       if (url.pathname === "/v1/policies") return Response.json({ ...body, id: "policy-owner", owner_id: "user-quorum" });
+      if (url.pathname === "/v1/policies/policy-owner") return Response.json(manualFujiPolicy);
       if (url.pathname === "/v1/users/did:privy:test-owner/wallets") {
         externalId = body.wallets[0].external_id; return Response.json(user);
       }
@@ -57,4 +72,32 @@ it("fails closed if the server is a co-owner, or the session signer is absent", 
   await expect(pregenerateOwnerWallet(client, undefined, input)).rejects.toThrow("No app-owned fallback");
   expect(calls).toHaveLength(0);
   await expect(pregenerateOwnerWallet(client, "session-signer", input)).rejects.toThrow("solely user-owned");
+});
+
+it("Fuji enrollment reads a manually configured user-owned policy, never creates or edits one", async () => {
+  vi.stubEnv("PRIVY_FUJI_POLICY_ID", "policy-owner");
+  const { client, calls } = fixture(true);
+  const result = await pregenerateOwnerWallet(client, "session-signer", { ownerEmail: "owner@example.com", accountId: "fuji-account", vaults, chain: "avalanche-fuji" });
+  expect(result.address).toBe(`0x${"3".repeat(40)}`);
+  expect(calls.filter(c => c.path.startsWith("/v1/policies"))).toEqual([{ method: "GET", path: "/v1/policies/policy-owner", body: {} }]);
+  expect(calls.find(c => c.path.endsWith("test-owner/wallets"))!.body.wallets).toEqual([expect.objectContaining({ chain_type: "ethereum", additional_signers: [{ signer_id: "session-signer", override_policy_ids: ["policy-owner"] }] })]);
+});
+
+it("Fuji requires manual configuration before any provider call and rejects broad policies", async () => {
+  vi.stubEnv("PRIVY_FUJI_POLICY_ID", "");
+  const { client, calls } = fixture();
+  await expect(pregenerateOwnerWallet(client, "session-signer", { ownerEmail: "owner@example.com", accountId: "fuji", vaults, chain: "avalanche-fuji" })).rejects.toThrow("PRIVY_FUJI_POLICY_ID");
+  expect(calls).toEqual([]);
+  type Policy = Parameters<typeof assertFujiPolicy>[0];
+  expect(() => assertFujiPolicy(manualFujiPolicy as Policy)).not.toThrow();
+  for (const field of ["chain_id", "value", "to", "function_name", "transfer.amount"]) {
+    const policy = structuredClone(manualFujiPolicy);
+    policy.rules[0].conditions = policy.rules[0].conditions.filter(c => c.field !== field);
+    expect(() => assertFujiPolicy(policy as Policy)).toThrow("Configure it manually");
+  }
+  expect(() => assertFujiPolicy({ ...manualFujiPolicy, rules: [...manualFujiPolicy.rules, { name: "Broad", action: "ALLOW", method: "personal_sign", conditions: [] }] } as Policy)).toThrow("Configure it manually");
+  const wrongAbi = { ...manualFujiPolicy, rules: manualFujiPolicy.rules.map(rule => ({ ...rule,
+    conditions: rule.conditions.map(c => c.field_source === "ethereum_calldata" ? { ...c, abi: [] } : c),
+  })) };
+  expect(() => assertFujiPolicy(wrongAbi as Policy)).toThrow("Configure it manually");
 });

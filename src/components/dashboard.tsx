@@ -1,5 +1,7 @@
 "use client";
 
+import { chainConfig } from "@/core/chains";
+
 import { useEffect, useRef, useState } from "react";
 import { ActionFeed } from "./action-feed";
 import { RefusalResult } from "./refusal-result";
@@ -204,11 +206,12 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
           <h2>{showingRealRun ? "Real money. Permission expired." : "Watch a two-minute budget expire."}</h2>
           {showingRealRun && <span className="demo-mode-pill real-run-pill">{realRun.label}</span>}
           {showingRealRun && <div className="run-account-summary">
+            <span className="demo-mode-pill">{chainConfig(realRun.snapshot.agent.chain).label}</span>
             <h3>{realRun.snapshot.agent.displayName} <a className="proof-chip" href={`https://explorer.ens.dev/${realRun.snapshot.agent.ensName}`} title={realRun.snapshot.agent.ensName} target="_blank" rel="noreferrer">ENS ↗</a></h3>
             <p>{realRun.snapshot.agent.ensName}</p>
             <p>Owner: {realRun.presentation?.ownerLabel} · {realRun.presentation?.walletOwnership} wallet</p>
             <p>Participant-reported client: {realRun.presentation?.client}</p>
-            <p className="run-wallet">Wallet: <a href={`https://basescan.org/address/${realRun.snapshot.agent.walletAddress}`} target="_blank" rel="noreferrer">{realRun.snapshot.agent.walletAddress}</a></p>
+            <p className="run-wallet">Wallet: <a href={`${chainConfig(realRun.snapshot.agent.chain).explorerUrl}/address/${realRun.snapshot.agent.walletAddress}`} target="_blank" rel="noreferrer">{realRun.snapshot.agent.walletAddress}</a></p>
           </div>}
           {!showingRealRun && result.moneyMode === "live" && <span className="demo-mode-pill real-run-pill">Real money · Base mainnet</span>}
           <DemoStepper key={displayedMandate?.id ?? "ready"} agentName={displayedAgent?.displayName} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}

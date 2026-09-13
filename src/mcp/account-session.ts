@@ -39,7 +39,7 @@ export class AccountSession {
       // Credentials are consumed here, never forwarded to the gateway, adapters or statement.
       switch (name) {
         case "get_account": {
-          const result = await service.getAccount(input.name as string | undefined, input.owner_email as string | undefined);
+          const result = await service.getAccount(input.name as string | undefined, input.owner_email as string | undefined, input.chain as string | undefined);
           if (result.status === "ready") {
             const account = await this.runtime.deps.store.getAccount(result.accountId);
             if (!account) throw new Error("REFUSED — account unavailable; inspect provisioning before funding.");

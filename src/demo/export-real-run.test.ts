@@ -35,6 +35,7 @@ describe("public real-run export", () => {
     expect(out).not.toContain("ownership");
   });
   it("rejects incomplete and simulated runs", () => {
+    expect(() => exportRealRun({ ...snapshot.agent, chain: "avalanche-fuji" }, snapshot.mandate, snapshot.events)).toThrow("Base runs only");
     expect(() => exportRealRun(snapshot.agent, snapshot.mandate, snapshot.events.slice(0, -1))).toThrow("complete LIVE");
     expect(() => exportRealRun(snapshot.agent, snapshot.mandate, snapshot.events.map(e => ({ ...e, reason: `MOCK MONEY ${e.reason}` })))).toThrow("complete LIVE");
   });

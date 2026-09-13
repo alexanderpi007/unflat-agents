@@ -32,6 +32,27 @@ it("requires the owner email before creating anything, and normalizes it for Pri
   expect(result).toMatchObject({ ownerEmail: "owner@example.com", ownership: "privy-user" });
   expect((await runtime.deps.store.getAgent(result.accountId))!.ownership?.ownerEmail).toBe("owner@example.com");
 });
+
+it("persists Fuji on account and agent and returns that network with the Privy EVM address", async () => {
+  const runtime = fixture();
+  const result = await enroll(runtime, "fuji-nova", "owner@example.com", undefined, "avalanche-fuji");
+  const account = await runtime.deps.store.getAccount(result.accountId);
+  const agent = await runtime.deps.store.getAgent(result.accountId);
+  expect(account?.chain).toBe("avalanche-fuji");
+  expect(result).toMatchObject({ chain: "avalanche-fuji", network: "eip155:43113", testnet: true, fundingAddress: agent?.walletAddress });
+  expect(agent).toMatchObject({ chain: "avalanche-fuji", ensName: "fuji-nova.agents.unflat.eth" });
+  expect(runtime.wallet.calls).toEqual(["createOwnerWallet"]);
+  await expect(runtime.gateway.getOrCreateAgent(result.accountId, "fuji-nova", account!.ownerId, account!.ownerEmail, "base")).rejects.toThrow("chain cannot be changed");
+});
+
+it("defaults new accounts to Base and rejects unknown chains before provisioning", async () => {
+  const runtime = fixture();
+  await expect(enroll(runtime, "badchain", "owner@example.com", undefined, "avalanche")).rejects.toThrow("unsupported account chain");
+  expect(runtime.wallet.calls).toEqual([]);
+  const result = await enroll(runtime, "base-nova", "owner@example.com");
+  expect(result).toMatchObject({ chain: "base", network: "eip155:8453", testnet: false });
+  expect((await runtime.deps.store.getAgent(result.accountId))!.chain).toBe("base");
+});
 it("retains the wallet and reserves the name after ENS failure without reissuing a token or provisioning again", async () => {
   const runtime = fixture();
   vi.spyOn(runtime.deps.ens, "createIdentity").mockRejectedValue(new Error("ENS unavailable"));

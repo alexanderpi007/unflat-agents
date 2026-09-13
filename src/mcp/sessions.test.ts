@@ -44,6 +44,37 @@ function raw(method: string, session?: string, args: Record<string, unknown> = {
   }, body: JSON.stringify({ jsonrpc: "2.0", id: 123, method: "tools/call", params: { name: method, arguments: args } }) });
 }
 
+it("Fuji MCP enrollment → owner CONFIRM → pay → unsupported save → expiry refusal", async () => {
+  const { client, tool } = await connect();
+  const schema = (await client.listTools()).tools.find(t => t.name === "get_account")!.inputSchema;
+  expect(schema.properties).toHaveProperty("chain");
+  const created = data(await tool("get_account", { name: "fuji-http", owner_email: "fuji-owner@example.com", chain: "avalanche-fuji" }));
+  expect(created).toMatchObject({ chain: "avalanche-fuji", network: "eip155:43113", session_bound: true });
+  expect(created.next_step).toContain("AVAX");
+  expect((await tool("get_account", { chain: "base" })).isError).toBe(true);
+  expect(data(await tool("save", { amountUsdcCents: 100, idempotency_key: "fuji-unsupported-before-budget" })))
+    .toMatchObject({ status: "REFUSED", reason: expect.stringContaining("not supported on this chain") });
+  const pending = data(await tool("request_mandate", { purpose: "Fuji pay only" }));
+  expect((await tool("pay", { amountUsdcCents: 5, idempotency_key: "fuji-before-confirm" })).isError).toBe(true);
+  await expect(decideRequest(runtime, pending.requestId as string, true)).rejects.toThrow("CONFIRM");
+  await decideRequest(runtime, pending.requestId as string, true, "CONFIRM");
+  const paid = data(await tool("pay", { amountUsdcCents: 5, idempotency_key: "fuji-http-pay" }));
+  expect(paid.transfer).toMatchObject({ network: "eip155:43113" });
+  expect(paid.next_step).toContain("skip save");
+  const noSave = data(await tool("save", { amountUsdcCents: 100, idempotency_key: "fuji-http-save" }));
+  expect(noSave).toMatchObject({ status: "REFUSED", expected: true, retryable: false, reason: expect.stringContaining("not supported on this chain") });
+  (runtime.deps.clock as FakeClock).advance(121_000);
+  const transfer = vi.spyOn(runtime.deps.wallet, "transferUsdc");
+  const refused = data(await tool("pay", { amountUsdcCents: 5, idempotency_key: "fuji-http-expired" }));
+  expect(refused).toMatchObject({ status: "REFUSED", budget_left: 115 });
+  expect(transfer).not.toHaveBeenCalled();
+  const statement = data(await tool("statement"));
+  expect(statement.chain).toBe("avalanche-fuji");
+  const events = statement.events as { proof_url?: string; action: string }[];
+  expect(events.every(e => e.action !== "usdc.transfer" || !e.proof_url)).toBe(true);
+  expect(JSON.stringify(statement)).not.toContain(created.account_token);
+});
+
 it("fixed URL/no headers: discovery → enroll → approve → pay/save → expiry refusal in one bound session", async () => {
   const account = await open("session-nova");
   const tools = (await account.client.listTools()).tools;

@@ -6,6 +6,8 @@ Public GitHub repository: [alexanderpi007/unflat-agents](https://github.com/alex
 
 Deployed dapp: https://unflat-agents.vercel.app
 
+On the **avalanche branch only**, accounts can select **Avalanche Fuji testnet** for mandate-gated USDC payments; savings are not supported there. Base remains the default and the public archives remain Base runs. See [Fuji setup, manual Privy policy and faucets](docs/AVALANCHE.md). This branch has no live Fuji transaction proof yet and is not deployed to the public site.
+
 The gateway creates a Privy agent wallet and an ENSv2 identity, enforces a short-lived spending mandate through Arkiv's live TTL query surface, makes guarded Base USDC payments, asks AIMorgan for advisory strategy, and sweeps idle USDC to an unflat allowlisted Morpho vault. The owner publishes the statement to Swarm with native encryption through browser-side Swarm ID.
 
 ## Demo

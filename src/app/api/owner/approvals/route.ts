@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runtime } from "@/server/runtime";
 import { authenticateOwner, ownsAccount, requireOwnedAccount, type OwnerPrincipal } from "@/server/owner-auth";
 import { decideRequest } from "@/mcp/service";
+import { accountChain } from "@/core/chains";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
     && ownsAccount(owner, accounts.find(a => a.id === r.agentId), agents.find(a => a.id === r.agentId)));
   const pending = requests.filter(r => r.status === "pending").slice(-20).map(({ principal: _, ...request }) => ({
     ...request, name: agents.find(agent => agent.id === request.agentId)?.ensName ?? request.agentId,
+    chain: accountChain(agents.find(agent => agent.id === request.agentId)?.chain ?? accounts.find(account => account.id === request.agentId)?.chain),
   }));
   const vault = runtime.deps.vaultAllowlist.find(v => v.execution === "direct-morpho");
   return Response.json({ pending, ...(selected ? { request: requests[0] ? { id: requests[0].id, status: requests[0].status } : null } : {}), moneyMode: runtime.health.adapters.privy.mode,

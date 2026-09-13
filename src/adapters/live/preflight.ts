@@ -2,6 +2,7 @@ import { createPublicClient, erc20Abi, erc4626Abi, getAbiItem, http, parseAbi } 
 import { base } from "viem/chains";
 import type { PreflightPort } from "@/core/ports";
 import type { HexAddress } from "@/core/types";
+import { UsdcTransferPreflight } from "./usdc-transfer";
 
 const usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const vaultAbi = parseAbi([
@@ -28,9 +29,11 @@ export function evaluateEarnReadiness(input: {
 
 export class BaseEarnPreflightAdapter implements PreflightPort {
   private readonly client;
+  private readonly transfers;
 
-  constructor(rpcUrl: string) {
+  constructor(rpcUrl: string, fujiRpcUrl?: string) {
     this.client = createPublicClient({ chain: base, transport: http(rpcUrl, { retryCount: 3, retryDelay: 1000 }) });
+    this.transfers = new UsdcTransferPreflight(rpcUrl, fujiRpcUrl);
   }
 
   async verifyRecall(input: Parameters<PreflightPort["verifyRecall"]>[0]) {
@@ -47,52 +50,12 @@ export class BaseEarnPreflightAdapter implements PreflightPort {
     } catch { return { allPassed: false, reason: "Recall preflight failed. Inspect vault liquidity, shares and gas balance; nothing was signed." }; }
   }
 
-  async getUsdcBalance(walletAddress: Parameters<PreflightPort["getUsdcBalance"]>[0]) {
-    const rawAmount = await this.client.readContract({
-      address: usdc,
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [walletAddress],
-    });
-    return {
-      rawAmount: rawAmount.toString(),
-      amountUsdcCents: Number(rawAmount / 10_000n),
-    };
+  async getUsdcBalance(...args: Parameters<PreflightPort["getUsdcBalance"]>) {
+    return this.transfers.getUsdcBalance(...args);
   }
 
   async verifyUsdcTransfer(input: Parameters<PreflightPort["verifyUsdcTransfer"]>[0]) {
-    const rawAmount = BigInt(input.amountUsdcCents) * 10_000n;
-    try {
-      const [balance, gas] = await Promise.all([
-        this.client.readContract({
-          address: usdc,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [input.walletAddress],
-        }),
-        this.client.estimateContractGas({
-          address: usdc,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [input.recipient, rawAmount],
-          account: input.walletAddress,
-        }),
-      ]);
-      const allPassed = balance >= rawAmount && gas > 0n;
-      return {
-        allPassed,
-        gasEstimate: gas.toString(),
-        reason: allPassed
-          ? "Base USDC balance and eth_estimateGas checks passed independently."
-          : "Base USDC balance is below the transfer amount.",
-      };
-    } catch (error) {
-      return {
-        allPassed: false,
-        gasEstimate: "0",
-        reason: error instanceof Error ? error.message : "Base USDC transfer preflight failed.",
-      };
-    }
+    return this.transfers.verify(input);
   }
 
   async verifyEarn(input: Parameters<PreflightPort["verifyEarn"]>[0]) {
