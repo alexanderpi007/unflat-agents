@@ -187,7 +187,7 @@ export function Dashboard({ realRun, ownerModeAvailable, privyAppId }: { realRun
           <h2>{showingRealRun ? "Real money. Permission expired." : "Watch a two-minute budget expire."}</h2>
           {showingRealRun && <span className="demo-mode-pill real-run-pill">{realRun.label}</span>}
           {!showingRealRun && result.moneyMode === "live" && <span className="demo-mode-pill real-run-pill">Real money · Base mainnet</span>}
-          <DemoStepper key={displayedMandate?.id ?? "ready"} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
+          <DemoStepper key={displayedMandate?.id ?? "ready"} agentName={displayedAgent?.displayName} events={result ? displayedEvents : []} expiresAt={result ? displayedMandate?.expiresAt : undefined}
             confirmedExpired={mandateExpired} running={running} unavailable={!!error} lastUpdateAt={lastUpdateAt} />
           <button className="simulation-button" onClick={() => void run("mock")} disabled={running}>Run a simulation →</button>
           <span className="demo-mode-pill">Simulated money · live Arkiv</span>
@@ -205,7 +205,7 @@ export function Dashboard({ realRun, ownerModeAvailable, privyAppId }: { realRun
           <div className="avatar" aria-hidden="true">A<span>01</span></div>
           <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2><p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p></div>
           <div className="identity-summary">
-            <p>{nameVerified ? "Name verified: it points to Atlas’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
+            <p>{nameVerified ? "Name verified: it points to this agent’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
             {displayedAgent?.ensExplorerUrl && <a className="proof-chip" title={displayedAgent.ensRegistrationTransaction ?? displayedAgent.ensName} href={displayedAgent.ensExplorerUrl} target="_blank" rel="noreferrer">ENS ↗</a>}
             <details><summary>Identity details</summary>
               <p>The same wallet is reused across runs: {short(displayedAgent?.walletAddress ?? walletAddress) || "Loading…"}.</p>
@@ -218,7 +218,7 @@ export function Dashboard({ realRun, ownerModeAvailable, privyAppId }: { realRun
 
         <section className="story-section panel" id="budget" tabIndex={-1}>
           <p className="panel-label">02 / THE EXPIRING BUDGET</p>
-          <h2>Atlas can act for two minutes.</h2>
+          <h2>{displayedAgent?.displayName ?? "Atlas"} can act for two minutes.</h2>
           <p>Permission ends automatically. The owner does not need to revoke it.</p>
           <div className="budget-layout">
             <article className={`mandate-card ${mandateExpired ? "expired" : "active"}`}>
@@ -258,7 +258,7 @@ export function Dashboard({ realRun, ownerModeAvailable, privyAppId }: { realRun
           source: mockMoney ? "mock-demo" : "gateway",
         } : undefined} />
 
-        <ProofFooter liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified}
+        <ProofFooter liveMoney={result?.moneyMode === "live"} started={!!result} nameVerified={nameVerified} ensName={displayedAgent?.ensName}
           deposit={(mockMoney ? realRun.snapshot.events : displayedEvents).find(event => event.action === "earn.sweep" && event.status === "completed")?.reference}
           showingRealRun={showingRealRun} mandate={displayedMandate} before={queryEvidence.before} after={queryEvidence.after} health={health}>
             {health ? adapters.map(([key, label]) => <p key={key}>{label}: {health.adapters[key].mode.toUpperCase()} — {health.adapters[key].detail}</p>) : <p>{healthError ? "Service status unavailable" : "Reading service status…"}</p>}

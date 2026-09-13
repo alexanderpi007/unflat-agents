@@ -16,6 +16,9 @@ test("opens on read-only real proofs, replaces them with a simulation, and retur
   });
   await page.goto("http://localhost:3107");
   await expect(page.getByText(realRun.label, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Meet ${realRun.snapshot.agent.displayName}`, exact: true })).toBeVisible();
+  await expect(page.locator(".hero-refused")).toContainText(`${realRun.snapshot.agent.displayName} cannot spend again`);
+  await expect(page.locator(`#proofs a[title="${realRun.snapshot.agent.ensName}"]`)).toHaveAttribute("href", `https://explorer.ens.dev/${realRun.snapshot.agent.ensName}`);
   await expect(page.getByRole("button", { name: "Owner mode", exact: true })).toBeVisible();
   await expect(page.locator(".demo-stepper .step-done")).toHaveCount(4);
   const current = page.locator(".story-content > .timeline");

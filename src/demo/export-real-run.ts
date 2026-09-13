@@ -2,6 +2,17 @@ import type { Agent, DemoSnapshot, Mandate, StatementEvent } from "@/core/types"
 
 export type RealRun = { version: 1; label: string; snapshot: DemoSnapshot };
 
+export function exportLatestRealRun(runs: DemoSnapshot[]): RealRun {
+  for (const run of [...runs].sort((a, b) => b.mandate.createdAt.localeCompare(a.mandate.createdAt))) {
+    try {
+      return exportRealRun(run.agent, run.mandate, run.events);
+    } catch {
+      // An unfinished or simulated run must not replace the latest complete live proof.
+    }
+  }
+  throw new Error("No complete LIVE run is available to export.");
+}
+
 // Whitelist output fields; never serialize the store, mandate openings or SDK credentials.
 export function exportRealRun(agent: Agent, mandate: Mandate, allEvents: StatementEvent[]): RealRun {
   const events = allEvents.filter(e => e.agentId === agent.id && e.at >= mandate.createdAt);

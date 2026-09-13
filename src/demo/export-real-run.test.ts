@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import committed from "../../public/real-run.json";
-import { exportRealRun } from "./export-real-run";
+import { exportLatestRealRun, exportRealRun } from "./export-real-run";
 import type { DemoSnapshot } from "@/core/types";
 
 const snapshot = committed.snapshot as DemoSnapshot;
 describe("public real-run export", () => {
+  it("selects the latest complete account run, not a fixed Atlas account", () => {
+    const older = { ...snapshot, agent: { ...snapshot.agent, displayName: "Older account" },
+      mandate: { ...snapshot.mandate, createdAt: "2020-01-01T00:00:00.000Z" } };
+    const incomplete = { ...snapshot, mandate: { ...snapshot.mandate, createdAt: "2099-01-01T00:00:00.000Z" } };
+    expect(exportLatestRealRun([older, incomplete, snapshot]).snapshot.agent.displayName).toBe(snapshot.agent.displayName);
+    expect(() => exportLatestRealRun([incomplete])).toThrow("No complete LIVE run");
+  });
   it("contains the requested LIVE proof and $0.15 remaining", () => {
     for (const action of ["usdc.transfer", "earn.approve", "earn.sweep"]) {
       expect(snapshot.events.find(e => e.action === action && e.status === "completed")?.reference).toMatch(/^0x[0-9a-f]{64}$/);

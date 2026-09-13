@@ -9,7 +9,7 @@ export function completedDemoSteps(events: StatementEvent[]) {
   return [completed(["agent.create", "ens.records", "ens.readonly"]), completed(["usdc.transfer"]), completed(["earn.sweep"])];
 }
 
-export function DemoStepper({ events, ...timer }: TimerInput & { events: StatementEvent[] }) {
+export function DemoStepper({ events, agentName = "Atlas", ...timer }: TimerInput & { events: StatementEvent[]; agentName?: string }) {
   const [named, paid, saved] = completedDemoSteps(events);
   const view = useTimerView(timer);
   const refused = timer.confirmedExpired && events.some(event => event.status === "refused");
@@ -41,7 +41,7 @@ export function DemoStepper({ events, ...timer }: TimerInput & { events: Stateme
     </ol>
     {!timer.running && !refused && !events.length && <p className="demo-empty">Press run. Two minutes. Watch it stop.</p>}
     {refused && <div className={`hero-refused ${dismissed ? "banner-dismissed" : ""}`} role="status">
-      <strong>REFUSED</strong><p>Time's up. Atlas cannot spend again. Nobody revoked anything.</p>
+      <strong>REFUSED</strong><p>Time's up. {agentName} cannot spend again. Nobody revoked anything.</p>
       <button className="dismiss-refusal" aria-label="Dismiss refusal banner" onClick={() => setDismissed(true)}>×</button>
     </div>}
   </div>;

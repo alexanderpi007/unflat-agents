@@ -2,8 +2,9 @@ import type { ArkivMandateQuery, Mandate, RuntimeHealth } from "@/core/types";
 
 const repo = "https://github.com/alexanderpi007/unflat-agents/blob/main";
 
-export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameVerified, mandate, before, after, health, children }: {
+export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameVerified, ensName = "atlas.agents.unflat.eth", mandate, before, after, health, children }: {
   deposit?: string;
+  ensName?: string;
   showingRealRun: boolean;
   liveMoney: boolean; started: boolean; nameVerified: boolean; mandate?: Mandate;
   before?: ArkivMandateQuery; after?: ArkivMandateQuery; health?: RuntimeHealth; children: React.ReactNode;
@@ -19,8 +20,8 @@ export function ProofFooter({ liveMoney, started, showingRealRun, deposit, nameV
         <a className="proof-chip" title={mandate?.arkivEntityKey ?? "Earlier Mission 02 evidence"} href={mandate?.arkivExplorerUrl ?? `${repo}/arkiv/submission.md#mission-02-evidence`} target="_blank" rel="noreferrer">Arkiv ↗</a>
         <details><summary>Query evidence</summary><p>Before: {before?.found ? "found" : "not captured"}, block {before?.blockNumber.toString() ?? "—"}. After: {after && !after.found ? "empty" : "not confirmed"}, block {after?.blockNumber.toString() ?? "—"}.</p><p>Fresh queries, no delete or extension. <a href={`${repo}/arkiv/submission.md#mission-02-evidence`}>Earlier Mission 02 proof ↗</a></p></details>
       </article>
-      <article><h3>Identity</h3><p>{nameVerified ? "Atlas’s name resolves live to its wallet on Sepolia." : "Live resolution pending; registration proof is available."}</p>
-        <a className="proof-chip" title="atlas.agents.unflat.eth" href="https://explorer.ens.dev/atlas.agents.unflat.eth" target="_blank" rel="noreferrer">ENS ↗</a>
+      <article><h3>Identity</h3><p>{nameVerified ? "This agent’s name resolves to its wallet on Sepolia." : "Live resolution pending; registration proof is available."}</p>
+        <a className="proof-chip" title={ensName} href={`https://explorer.ens.dev/${ensName}`} target="_blank" rel="noreferrer">ENS ↗</a>
       </article>
       <article><h3>Owner’s record</h3><p>Real encrypted storage, on the owner’s funded drive.</p>
         <a className="proof-chip" title="Owner-verified retrieval evidence; no secret reference" href={`${repo}/swarm/README.md`} target="_blank" rel="noreferrer">Swarm ↗</a>
