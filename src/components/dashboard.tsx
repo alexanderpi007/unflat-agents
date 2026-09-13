@@ -182,24 +182,27 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
     <main className="story-page">
       <a className="skip-link" href="#budget">Skip to the expiring budget</a>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="unflat agents home"><span className="brand-mark">u</span> unflat <span className="brand-cross">×</span> agents</a>
-        <a href="#proofs">What is real?</a><div className="header-actions">
+        <a className="brand" href="#introduction" aria-label="unflat agents home"><span className="brand-mark">u</span> unflat <span className="brand-cross">×</span> agents</a>
+        <nav className="chapter-nav" aria-label="Page chapters"><a href="#top">The accounts</a><a href="#refusal-result">The ending</a><a href="#proofs">What is real?</a></nav><div className="header-actions">
           {ownerModeAvailable && <button className="owner-mode-toggle" aria-expanded={ownerMode} aria-controls="owner-access" onClick={() => setOwnerMode(value => !value)}>Owner mode</button>}
           <div className="hack-badge">ETHRome · 40H</div>
         </div>
       </header>
-      <ProblemBlock />
       {ownerModeAvailable && ownerMode && <OwnerLoginLoader appId={privyAppId} requestId={approvalRequest} />}
+      <ProblemBlock name={realRun.snapshot.agent.ensName} />
       <section className="hero" id="top">
-        <div><p className="eyebrow">A BANK ACCOUNT FOR AI AGENTS</p>
+        <div className="hero-copy"><p className="eyebrow"><span className="section-number">01</span> A BANK ACCOUNT FOR AI AGENTS</p>
           <h1>A bank account.<br /><em>Built to expire.</em></h1>
           <p className="lede">An agent gets a name, a timed budget, yield, and a statement its owner keeps.</p>
+          <div className="evidence-intro"><span className="evidence-dot" /><p>{showingRealRun ? "These runs already happened." : "You are watching a simulation."}<br /><strong>{showingRealRun ? "Check every receipt yourself." : "The real runs are one click away."}</strong></p></div>
+          <dl className="hero-facts"><div><dt>Real accounts</dt><dd>{realRuns.length.toString().padStart(2, "0")}</dd></div><div><dt>Permission</dt><dd>2 <small>minutes</small></dd></div><div><dt>Revocations</dt><dd>0</dd></div></dl>
         </div>
         <section className="run-panel demo-object" aria-label="Two-minute demo">
           <nav className="real-run-tabs" aria-label="Real runs">
             <button aria-pressed={showingRealRun && selectedRun === 0} disabled={running} onClick={() => showRealRun(0)}>Latest real run · nova</button>
             <button aria-pressed={showingRealRun && selectedRun === 1} disabled={running} onClick={() => showRealRun(1)}>Previous real runs</button>
           </nav>
+          <div className="receipt-heading"><span>ACCOUNT / {showingRealRun ? String(selectedRun + 1).padStart(2, "0") : "DEMO"}</span><span>{showingRealRun ? "RECORDED ON BASE" : "SIMULATED MONEY"}</span></div>
           <h2>{showingRealRun ? "Real money. Permission expired." : "Watch a two-minute budget expire."}</h2>
           {showingRealRun && <span className="demo-mode-pill real-run-pill">{realRun.label}</span>}
           {showingRealRun && <div className="run-account-summary">
@@ -223,7 +226,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         {showingRealRun && <RealRunStory snapshot={realRun.snapshot} />}
         <section className="identity-card panel story-section">
           <p className="panel-label">01 / THE AGENT</p>
-          <div className="avatar" aria-hidden="true">A<span>01</span></div>
+          <div className="avatar" aria-hidden="true">{displayedAgent?.displayName?.[0]?.toUpperCase() ?? "A"}<span>01</span></div>
           <div><h2>Meet {displayedAgent?.displayName ?? "Atlas"}</h2><p className="ens">{displayedAgent?.ensName ?? "atlas.agents.unflat.eth"}</p></div>
           <div className="identity-summary">
             <p>{nameVerified ? "Name verified: it points to this agent’s wallet." : displayedAgent?.ensMode === "mock" ? "Simulated identity for this demo." : "Name verification pending."}</p>
@@ -268,6 +271,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
         <article className="rail-card panel story-section">
           <h3>Idle money can keep working.</h3>
           <p className="rate-inline"><strong>{vaultRate?.apyBasisPoints == null ? "Unavailable" : `${(vaultRate.apyBasisPoints / 100).toFixed(2)}%`}</strong> variable APY · {vaultRate?.source === "morpho-api" ? "Morpho API" : "rate not verified"}</p>
+          <p className="risk-note">Variable yield, not a guaranteed return. Funds are exposed to smart contract risk.</p>
           <a className="proof-chip" title={vaultRate?.vault.address} href={`https://basescan.org/address/${vaultRate?.vault.address ?? "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9"}`} target="_blank" rel="noreferrer">Base ↗</a>
           <details><summary>Savings details</summary><p>{vaultRate?.vault.label ?? "Steakhouse Prime USDC"}. {vaultRateError ? "Rate unavailable. No invented fallback." : "Realized six-hour average; not a guaranteed return."}</p><p>{directMorphoLabel}</p><p>{aimorganFeeWaivedLabel}</p><p>AIMorgan recommends. The gateway only deposits into approved vaults.</p></details>
         </article>
@@ -291,7 +295,7 @@ export function Dashboard({ realRuns, ownerModeAvailable, privyAppId }: { realRu
           <span className="demo-mode-pill">Simulated money · live Arkiv</span>
         </section>
       </div>
-      <footer><span>unflat × agents</span><p>Permission ends. The owner keeps the record.</p><span>Built at ETHRome 2026</span></footer>
+      <footer><div><span className="footer-wordmark">unflat × agents</span><p>Permission ends.<br />The owner keeps the record.</p></div><div><span>Built at ETHRome 2026</span><p className="risk-note">Hackathon prototype, not a regulated bank or insured deposit. Never fund it with money you cannot afford to lose.</p><a href="https://github.com/alexanderpi007/unflat-agents" target="_blank" rel="noreferrer">Read the source ↗</a></div></footer>
     </main>
   );
 }

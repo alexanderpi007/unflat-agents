@@ -7,6 +7,52 @@ import previousRealRun from "../public/real-runs/atlas-2026-09-12.json" with { t
 
 const secret = "ab".repeat(64); // Synthetic test reference; never a live drive reference.
 
+test("account sculpture follows scroll, respects reduced motion and never executes an action", async ({ page }) => {
+  const mutations: string[] = [];
+  const errors: string[] = [];
+  page.on("request", request => {
+    if (request.url().includes("/api/") && request.method() === "POST") mutations.push(request.url());
+  });
+  page.on("pageerror", error => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("http://localhost:3107");
+  const introduction = page.locator(".problem-block");
+  const progress = () => introduction.evaluate(element => Number(getComputedStyle(element).getPropertyValue("--account-progress")));
+  await expect(introduction).toHaveAttribute("data-motion", "scroll");
+  expect(await progress()).toBe(0);
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await expect.poll(progress).toBeGreaterThan(0.4);
+  await page.screenshot({ path: "test-results/account-expanded-desktop.png" });
+  await page.getByRole("link", { name: "See the real runs", exact: false }).click();
+  await expect(page).toHaveURL(/#top$/);
+  await page.screenshot({ path: "test-results/account-receipts-desktop.png" });
+  await page.screenshot({ path: "test-results/account-page-desktop.png", fullPage: true });
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    await introduction.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo(0, 620));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/account-expanded-${width}.png` });
+  }
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.locator(".demo-object").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/account-receipts-mobile.png" });
+  await page.screenshot({ path: "test-results/account-page-mobile.png", fullPage: true });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(introduction).toHaveAttribute("data-motion", "reduced");
+  const transform = () => page.locator(".account-stack").evaluate(element => getComputedStyle(element).transform);
+  const still = await transform();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await transform()).toBe(still);
+  expect(await progress()).toBe(0.35);
+  await expect(page.locator(".scroll-cue")).toBeHidden();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(introduction).toHaveAttribute("data-motion", "scroll");
+  await expect.poll(progress).toBe(0);
+  expect(mutations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("problem block leads the hero and its full display headline fits five mobile lines", async ({ page }) => {
   await page.goto("http://localhost:3107");
   const problem = page.getByRole("region", { name: "Your agent has a wallet. It doesn't have a bank.", exact: true });
@@ -113,6 +159,7 @@ test("remote Owner mode opens email login without exposing operator controls", a
   await page.getByRole("button", { name: "Owner mode", exact: true }).click();
   await expect(live).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Log in with email", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in with email", exact: true })).toBeInViewport();
   await expect(page.getByLabel("Owner token", { exact: true })).toHaveCount(0);
   expect(page.url()).not.toContain("token");
   await expect(live).toHaveCount(0);
